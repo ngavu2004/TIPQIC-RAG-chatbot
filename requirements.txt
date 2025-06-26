@@ -1,0 +1,13 @@
+langchain
+openai
+pinecone-client
+langchain-pinecone
+langchain-openai
+langchain_community
+langchain-chroma
+langchain-huggingface
+langchain_google_genai
+gpt4all
+unstructured
+python-dotenv
+pypdf
