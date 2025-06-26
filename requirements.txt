@@ -11,3 +11,4 @@ gpt4all
 unstructured
 python-dotenv
 pypdf
+pdfplumber
