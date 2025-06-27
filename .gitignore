@@ -2,3 +2,6 @@
 .env
 chroma/
 data/sources/
+**/__pycache__/*.pyc
+**/*.pyc
+

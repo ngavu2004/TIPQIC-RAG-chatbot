@@ -1,7 +1,7 @@
 import os
 
 from langchain_google_genai import ChatGoogleGenerativeAI
-from query_db import search_db
+from .query_db import search_db
 
 
 def generate_chat_response(query: str, retrieved_docs) -> str:
