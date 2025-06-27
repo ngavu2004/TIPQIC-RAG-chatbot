@@ -1,5 +1,5 @@
 lint:
-	flake8 .
+	pylint $$(find . -name "*.py" -not -path "./.rag_env/*" -not -path "./*env/*")
 	isort . --skip-glob "*env/*"
 	black . --exclude ".*env([\\/])|migrations"
 
