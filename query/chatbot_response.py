@@ -47,10 +47,10 @@ def generate_chat_response(query: str, retrieved_docs) -> str:
         )
 
         # Create messages
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ]
+        # messages = [
+        #     {"role": "system", "content": system_prompt},
+        #     {"role": "user", "content": user_prompt},
+        # ]
 
         # Generate response
         response = llm.invoke(

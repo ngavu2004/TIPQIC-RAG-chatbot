@@ -73,7 +73,7 @@ def save_to_chroma(chunks: list[Document]):
         shutil.rmtree(CHROMA_PATH)
 
     # create db
-    db = Chroma.from_documents(chunks, embeddings, persist_directory=CHROMA_PATH)
+    Chroma.from_documents(chunks, embeddings, persist_directory=CHROMA_PATH)
 
     print(f"Saved {len(chunks)} chunks to {CHROMA_PATH}.")
 

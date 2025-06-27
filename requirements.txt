@@ -12,3 +12,7 @@ unstructured
 python-dotenv
 pypdf
 pdfplumber
+fastapi
+uvicorn[standard]
+requests
+pydantic
