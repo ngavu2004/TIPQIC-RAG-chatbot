@@ -2,6 +2,10 @@
 .env
 chroma/
 data/sources/
-**/__pycache__/*.pyc
-**/*.pyc
-
+# Python cache files and directories
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+*.pyo
+*.pyd
