@@ -1,0 +1,43 @@
+[tool.black]
+line-length = 88
+target-version = ['py38', 'py39', 'py310', 'py311']
+exclude = '''
+/(
+    \.git
+  | __pycache__
+  | migrations
+  | \.rag_env
+  | .*env
+  | .*env/.*
+)/
+'''
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+line_length = 88
+skip_glob = [
+    "migrations/*",
+    "*env",
+    "*env/**", 
+    ".*env",
+    ".*env/**",
+    ".rag_env",
+    ".rag_env/**"
+]
+
+[tool.autoflake]
+remove-all-unused-imports = true
+remove-unused-variables = true
+remove-duplicate-keys = true
+expand-star-imports = true
+ignore-init-module-imports = true
+in-place = true
+recursive = true
+exclude = [
+    ".rag_env",
+    ".*env",
+    "*env",
+    "migrations",
+    "__pycache__"
+]
