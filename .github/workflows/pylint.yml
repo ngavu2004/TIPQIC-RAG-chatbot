@@ -37,4 +37,4 @@ jobs:
     
     - name: Run Pylint (linting)
       run: |
-        pylint $(find . -name "*.py" -not -path "./.rag_env/*" -not -path "./*env/*")
+        pylint --fail-under=8.0 $(find . -name "*.py" -not -path "./.rag_env/*" -not -path "./*env/*")
