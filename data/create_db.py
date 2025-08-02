@@ -66,6 +66,9 @@ embeddings = GoogleGenerativeAIEmbeddings(
     model="models/text-embedding-004", task_type="retrieval_document"
 )
 
+# Initialize Chroma DB
+db = Chroma(persist_directory=CHROMA_PATH, embedding_function=embeddings)
+
 
 def save_to_chroma(chunks: list[Document]):
     print("Clear previous db, and save the new db.")
@@ -83,6 +86,24 @@ def create_vector_db():
     documents = load_documents()
     doc_chunks = split_text(documents)
     save_to_chroma(doc_chunks)
+
+def add_chunks_to_chroma(chunks: list[dict]):
+    """
+    Add chunks to the Chroma database without clearing it.
+    """
+    print("Adding chunks to the Chroma DB...")
+
+    # Convert the incoming chunks into Document objects
+    documents = [Document(page_content=chunk["content"], metadata=chunk["metadata"]) for chunk in chunks]
+
+    # Add the documents to the Chroma database
+    db.add_documents(documents)
+
+    # Persist the updated database
+    db.persist()
+
+    print(f"Added {len(chunks)} chunks to the Chroma DB.")
+    return {"message": f"Successfully added {len(chunks)} chunks to the Chroma DB."}
 
 
 if __name__ == "__main__":

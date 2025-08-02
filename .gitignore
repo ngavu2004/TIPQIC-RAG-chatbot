@@ -9,3 +9,6 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
+.DS_Store
+lambda_aws/
+*.pem
