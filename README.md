@@ -104,14 +104,20 @@ This will:
 - Generate embeddings
 - Store everything in the Chroma vector database
 
-### Step 3: Run backend
+### Step 3: Set up backend and frontend
+   #### Linux
 
-From root folder, run this command to set up backend:
-`python api/main.py`
+   Run this command: `start_services.sh` to start services
 
-### Step 4: Run frontend
-From root folder, run this command to set up frontend:
-`streamlit run frontend/app.py`
+   Run this command: `stop_services.sh` to stop services
+
+   #### Window   
+
+   From root folder, run this command to set up backend:
+   `python api/main.py`
+
+   From root folder, run this command to set up frontend:
+   `streamlit run frontend/app.py`
 
 ## 💬 Usage Examples
 
