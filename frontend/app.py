@@ -114,15 +114,14 @@ def display_sources(sources: List[Dict]):
     st.markdown("### 📚 Sources")
     
     for i, source in enumerate(sources, 1):
-        with st.expander(f"Source {i}: {source['filename']} (Page {source['page']}) - Score: {source['score']:.3f}"):
+        with st.expander(f"Source {i}: {source['filename']} (Page {source['page']})"):
             st.markdown(f"**File:** {source['filename']}")
             st.markdown(f"**Page:** {source['page']}")
-            st.markdown(f"**Relevance Score:** {source['score']:.3f}")
             st.markdown(f"**Preview:** {source['preview']}")
 
 def main():
     # Header
-    st.markdown('<h1 class="main-header">🤖 TIPQIC RAG Chatbot</h1>', unsafe_allow_html=True)
+    st.markdown('<h1 class="main-header">🤖 TIVA</h1>', unsafe_allow_html=True)
     
     # Sidebar
     with st.sidebar:
@@ -142,13 +141,6 @@ def main():
         max_results = st.slider("Max Results", min_value=1, max_value=10, value=5)
         include_sources = st.checkbox("Include Sources", value=True)
         
-        # API Stats
-        st.subheader("📊 API Stats")
-        if api_healthy:
-            stats = get_api_stats()
-            if stats:
-                st.json(stats)
-        
         # Clear Chat Button
         if st.button("🗑️ Clear Chat History"):
             st.session_state.messages = []
@@ -159,64 +151,44 @@ def main():
         st.session_state.messages = []
 
     # Main chat interface
-    col1, col2 = st.columns([3, 1])
+    # Display chat history
+    for message in st.session_state.messages:
+        if message["role"] == "user":
+            display_chat_message(message["content"], is_user=True)
+        else:
+            display_chat_message(message["content"], is_user=False)
+            if "sources" in message and message["sources"]:
+                display_sources(message["sources"])
     
-    with col1:
-        # Display chat history
-        for message in st.session_state.messages:
-            if message["role"] == "user":
-                display_chat_message(message["content"], is_user=True)
-            else:
-                display_chat_message(message["content"], is_user=False)
-                if "sources" in message and message["sources"]:
-                    display_sources(message["sources"])
+    # Chat input
+    if prompt := st.chat_input("Ask me anything about TIPQIC...", disabled=not api_healthy):
+        # Add user message to chat history
+        st.session_state.messages.append({"role": "user", "content": prompt})
+        display_chat_message(prompt, is_user=True)
         
-        # Chat input
-        if prompt := st.chat_input("Ask me anything about TIPQIC...", disabled=not api_healthy):
-            # Add user message to chat history
-            st.session_state.messages.append({"role": "user", "content": prompt})
-            display_chat_message(prompt, is_user=True)
-            
-            # Get bot response
-            with st.spinner("🤔 Thinking..."):
-                response = send_chat_message(prompt, max_results, include_sources)
-            
-            if response and response.get("success"):
-                # Add bot response to chat history
-                bot_message = {
-                    "role": "assistant",
-                    "content": response["response"],
-                    "sources": response.get("sources", [])
-                }
-                st.session_state.messages.append(bot_message)
-                
-                # Display bot response
-                display_chat_message(response["response"], is_user=False)
-                if include_sources and response.get("sources"):
-                    display_sources(response["sources"])
-            
-            elif response and not response.get("success"):
-                error_msg = f"Error: {response.get('error_message', 'Unknown error')}"
-                st.error(error_msg)
-            else:
-                st.error("Failed to get response from the chatbot. Please try again.")
-    
-    with col2:
-        # Quick actions or example questions
-        st.subheader("💡 Example Questions")
-        example_questions = [
-            "What is TIPQIC?",
-            "How does the RAG system work?",
-            "What are the main features?",
-            "Tell me about the architecture",
-            "How to get started?"
-        ]
+        # Get bot response
+        with st.spinner("🤔 Thinking..."):
+            response = send_chat_message(prompt, max_results, include_sources)
         
-        for question in example_questions:
-            if st.button(question, key=f"example_{question}", disabled=not api_healthy):
-                # Add the example question as if user typed it
-                st.session_state.messages.append({"role": "user", "content": question})
-                st.rerun()
+        if response and response.get("success"):
+            # Add bot response to chat history
+            bot_message = {
+                "role": "assistant",
+                "content": response["response"],
+                "sources": response.get("sources", [])
+            }
+            st.session_state.messages.append(bot_message)
+            
+            # Display bot response
+            display_chat_message(response["response"], is_user=False)
+            if include_sources and response.get("sources"):
+                display_sources(response["sources"])
+        
+        elif response and not response.get("success"):
+            error_msg = f"Error: {response.get('error_message', 'Unknown error')}"
+            st.error(error_msg)
+        else:
+            st.error("Failed to get response from the chatbot. Please try again.")
 
     # Footer
     st.markdown("---")

@@ -9,3 +9,5 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
+*.pem
+Vu_Chatbot_credentials(in).csv

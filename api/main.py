@@ -81,7 +81,7 @@ async def chat_endpoint(request: ChatRequest):
     try:
         # Search the database
         results = search_db(request.message)
-
+        print(f"Search results are: {results}")
         if not results:
             return ChatResponse(
                 response="I couldn't find relevant information in the documents to answer your question. Could you try rephrasing it or asking about a different topic?",

@@ -104,17 +104,14 @@ This will:
 - Generate embeddings
 - Store everything in the Chroma vector database
 
-### Step 3: Query Your Documents
+### Step 3: Run backend
 
-**Single Question Mode:**
-```bash
-python query/query_db.py "What is TIPQIC about?"
-```
+From root folder, run this command to set up backend:
+`python api/main.py`
 
-**Interactive Chat Mode:**
-```bash
-python query/query_db.py --chat
-```
+### Step 4: Run frontend
+From root folder, run this command to set up frontend:
+`streamlit run frontend/app.py`
 
 ## 💬 Usage Examples
 
