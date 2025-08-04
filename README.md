@@ -119,6 +119,12 @@ This will:
    From root folder, run this command to set up frontend:
    `streamlit run frontend/app.py`
 
+### (OPTIONAL) To create database
+1. Create a folder `sources` inside folder `data`
+2. Put all documents you want to handle inside `sources`
+3. Navigate to folder `data`
+4. From folder `data`, run `python create_db.py`
+
 ## 💬 Usage Examples
 
 ### Command Line Query
