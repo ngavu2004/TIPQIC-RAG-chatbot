@@ -12,6 +12,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from query.chatbot_response import generate_chat_response
 from query.query_db import search_db
+from data.create_db import add_chunks_to_chroma
 
 app = FastAPI(
     title="TIPQIC RAG Chatbot API",
@@ -55,6 +56,12 @@ class HealthResponse(BaseModel):
     status: str
     timestamp: str
     version: str
+
+# Define the Pydantic model for chunks
+class DocumentChunk(BaseModel):
+    content: str
+    metadata: dict
+
 
 
 @app.get("/", response_model=dict)
@@ -130,6 +137,20 @@ async def chat_endpoint(request: ChatRequest):
             success=False,
             error_message=str(e),
         )
+
+@app.post("/api/add_chunks")
+async def add_chunks(chunks: List[DocumentChunk]):
+    """
+    Endpoint to handle adding chunks to the Chroma database.
+    """
+    try:
+        # Convert Pydantic models to dictionaries
+        chunk_dicts = [chunk.dict() for chunk in chunks]
+        response = add_chunks_to_chroma(chunk_dicts)
+        return response
+    except Exception as e:
+        print(f"Error in add_chunks endpoint: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to add chunks: {str(e)}")
 
 
 @app.get("/api/stats", response_model=dict)
