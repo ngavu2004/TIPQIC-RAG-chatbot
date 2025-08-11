@@ -10,8 +10,21 @@ st.set_page_config(
     page_title="TIPQIC RAG Chatbot",
     page_icon="🤖",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="expanded",
+    menu_items={
+        'Get Help': None,
+        'Report a bug': None,
+        'About': None
+    }
 )
+
+# Set theme to light mode
+st.markdown("""
+<script>
+    // Force light theme
+    document.documentElement.setAttribute('data-theme', 'light');
+</script>
+""", unsafe_allow_html=True)
 
 # API Configuration
 API_BASE_URL = "http://localhost:8000"
@@ -19,38 +32,78 @@ API_BASE_URL = "http://localhost:8000"
 # Custom CSS for better UI
 st.markdown("""
 <style>
+    /* Override Streamlit's default text color for main content only */
+    .main .stMarkdown, .main .stText, .main .stTextInput, .main .stTextArea {
+        color: #262730 !important;
+    }
+    
+    /* Ensure all text is visible in main content area */
+    .main p, .main div, .main span, .main label, .main input, .main textarea {
+        color: #262730 !important;
+    }
+    
     .main-header {
         font-size: 2.5rem;
-        color: #1f77b4;
+        color: #1f77b4 !important;
         text-align: center;
         margin-bottom: 2rem;
     }
+    
     .chat-message {
         padding: 1rem;
         border-radius: 0.5rem;
         margin: 0.5rem 0;
         border-left: 4px solid #1f77b4;
+        color: #262730 !important;
     }
+    
     .user-message {
         background-color: #f0f2f6;
         border-left-color: #ff6b6b;
+        color: #262730 !important;
     }
+    
     .bot-message {
         background-color: #e8f4fd;
         border-left-color: #1f77b4;
+        color: #262730 !important;
     }
+    
     .source-card {
         background-color: #f8f9fa;
         padding: 1rem;
         border-radius: 0.5rem;
         margin: 0.5rem 0;
         border: 1px solid #dee2e6;
+        color: #262730 !important;
     }
+    
     .metric-card {
         background-color: #ffffff;
         padding: 1rem;
         border-radius: 0.5rem;
         box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        color: #262730 !important;
+    }
+    
+    /* Fix for Streamlit's dark mode issues - only for main content */
+    .main .stApp {
+        background-color: #ffffff;
+    }
+    
+    /* Ensure proper contrast for all text elements in main content */
+    .main .stMarkdown p, .main .stMarkdown div, .main .stMarkdown span {
+        color: #262730 !important;
+    }
+    
+    /* Preserve sidebar styling */
+    .css-1d391kg {
+        background-color: #f0f2f6 !important;
+    }
+    
+    /* Ensure sidebar text is visible */
+    .css-1d391kg .stMarkdown, .css-1d391kg .stText {
+        color: #262730 !important;
     }
 </style>
 """, unsafe_allow_html=True)
