@@ -16,7 +16,7 @@ TEST_CONFIG = {
     "api_url": "http://localhost:8000",
     "api_health_endpoint": "/api/health",  # Correct health endpoint
     "test_username": "sata2",
-    "test_password": "Qwertyuiop123#",
+    "test_password": "qwertyuiop",
     "timeout": 2,  # Balanced between speed and reliability
     "headless": False,  # Set to True for headless testing
     "screenshot_dir": "screenshots",

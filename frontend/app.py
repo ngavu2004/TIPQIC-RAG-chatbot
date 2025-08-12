@@ -271,7 +271,7 @@ def show_login_page():
                             result = signup_user(new_username, new_password, email)
                         if result.get("success"):
                             st.success("Account created! Please log in.")
-                            st.experimental_set_query_params(page="login")
+                            st.query_params.update({"page": "login"})
                         else:
                             st.error(f"Signup failed: {result.get('error_message','Unknown error')}")
                     else:
