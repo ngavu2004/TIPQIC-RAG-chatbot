@@ -17,3 +17,12 @@ uvicorn[standard]
 requests
 pydantic
 streamlit
+psycopg2-binary
+sqlalchemy
+alembic
+passlib[bcrypt]
+python-jose[cryptography]
+python-multipart
+streamlit-cookies-manager
+selenium
+webdriver-manager

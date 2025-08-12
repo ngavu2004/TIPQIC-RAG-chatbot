@@ -1,259 +1,477 @@
 import streamlit as st
 import requests
-import json
-from datetime import datetime
 from typing import Dict, List, Optional
-import time
+from streamlit_cookies_manager import EncryptedCookieManager
 
-# Configure Streamlit page
+# ========== Page config ==========
 st.set_page_config(
     page_title="TIPQIC RAG Chatbot",
     page_icon="🤖",
     layout="wide",
     initial_sidebar_state="expanded",
-    menu_items={
-        'Get Help': None,
-        'Report a bug': None,
-        'About': None
-    }
+    menu_items={'Get Help': None, 'Report a bug': None, 'About': None}
 )
 
-# Set theme to light mode
+# Light theme hint (optional)
 st.markdown("""
-<script>
-    // Force light theme
-    document.documentElement.setAttribute('data-theme', 'light');
-</script>
+<script>document.documentElement.setAttribute('data-theme','light');</script>
 """, unsafe_allow_html=True)
 
-# API Configuration
+# ========== Config ==========
 API_BASE_URL = "http://localhost:8000"
 
-# Custom CSS for better UI
-st.markdown("""
-<style>
-    /* Override Streamlit's default text color for main content only */
-    .main .stMarkdown, .main .stText, .main .stTextInput, .main .stTextArea {
-        color: #262730 !important;
-    }
-    
-    /* Ensure all text is visible in main content area */
-    .main p, .main div, .main span, .main label, .main input, .main textarea {
-        color: #262730 !important;
-    }
-    
-    .main-header {
-        font-size: 2.5rem;
-        color: #1f77b4 !important;
-        text-align: center;
-        margin-bottom: 2rem;
-    }
-    
-    .chat-message {
-        padding: 1rem;
-        border-radius: 0.5rem;
-        margin: 0.5rem 0;
-        border-left: 4px solid #1f77b4;
-        color: #262730 !important;
-    }
-    
-    .user-message {
-        background-color: #f0f2f6;
-        border-left-color: #ff6b6b;
-        color: #262730 !important;
-    }
-    
-    .bot-message {
-        background-color: #e8f4fd;
-        border-left-color: #1f77b4;
-        color: #262730 !important;
-    }
-    
-    .source-card {
-        background-color: #f8f9fa;
-        padding: 1rem;
-        border-radius: 0.5rem;
-        margin: 0.5rem 0;
-        border: 1px solid #dee2e6;
-        color: #262730 !important;
-    }
-    
-    .metric-card {
-        background-color: #ffffff;
-        padding: 1rem;
-        border-radius: 0.5rem;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        color: #262730 !important;
-    }
-    
-    /* Fix for Streamlit's dark mode issues - only for main content */
-    .main .stApp {
-        background-color: #ffffff;
-    }
-    
-    /* Ensure proper contrast for all text elements in main content */
-    .main .stMarkdown p, .main .stMarkdown div, .main .stMarkdown span {
-        color: #262730 !important;
-    }
-    
-    /* Preserve sidebar styling */
-    .css-1d391kg {
-        background-color: #f0f2f6 !important;
-    }
-    
-    /* Ensure sidebar text is visible */
-    .css-1d391kg .stMarkdown, .css-1d391kg .stText {
-        color: #262730 !important;
-    }
-</style>
-""", unsafe_allow_html=True)
+# ========== Cookie manager ==========
+cookies = EncryptedCookieManager(
+    prefix="tipqic/",
+    password='your-secret-key-change-in-production'
+)
 
+# ========== Single HTTP session (keeps backend cookie) ==========
+def get_http() -> requests.Session:
+    if "http" not in st.session_state:
+        st.session_state.http = requests.Session()
+        st.session_state.http.headers.update({
+            'User-Agent': 'TIPQIC-Chatbot/1.0'
+        })
+    return st.session_state.http
+
+# ========== API helpers (no tokens; cookie-based) ==========
 def check_api_health() -> bool:
-    """Check if the API is running and healthy."""
     try:
-        response = requests.get(f"{API_BASE_URL}/api/health", timeout=5)
-        return response.status_code == 200
+        r = get_http().get(f"{API_BASE_URL}/api/health", timeout=5)
+        return r.status_code == 200
     except requests.exceptions.RequestException:
         return False
 
-def get_api_stats() -> Optional[Dict]:
-    """Get API statistics."""
+def login_user(username: str, password: str) -> Dict:
+    http = get_http()
     try:
-        response = requests.get(f"{API_BASE_URL}/api/stats", timeout=5)
-        if response.status_code == 200:
-            return response.json()
-    except requests.exceptions.RequestException:
-        pass
-    return None
-
-def send_chat_message(message: str, max_results: int = 5, include_sources: bool = True) -> Optional[Dict]:
-    """Send a chat message to the API."""
-    try:
-        payload = {
-            "message": message,
-            "max_results": max_results,
-            "include_sources": include_sources
-        }
-        response = requests.post(
-            f"{API_BASE_URL}/api/chat",
-            json=payload,
-            timeout=30
+        r = http.post(
+            f"{API_BASE_URL}/api/auth/login",
+            json={"username": username, "password": password},
+            timeout=10,
         )
-        if response.status_code == 200:
-            return response.json()
-        else:
-            st.error(f"API Error: {response.status_code} - {response.text}")
+        if r.status_code == 200:
+            data = r.json()
+            # Save resume token to browser storage
+            if "resume_token" in data and cookies.ready():
+                try:
+                    cookies["resume_token"] = data["resume_token"]
+                    cookies.save()
+                except:
+                    pass  # Cookie save failed, continue anyway
+            return {"success": True, **data}
+        return {"success": False, "error_message": f"{r.status_code} - {r.text}"}
     except requests.exceptions.RequestException as e:
-        st.error(f"Connection Error: {str(e)}")
-    return None
+        return {"success": False, "error_message": f"Connection Error: {e}"}
 
+def logout_user() -> bool:
+    try:
+        r = get_http().post(f"{API_BASE_URL}/api/auth/logout", timeout=10)
+        # FastAPI should delete the httpOnly cookie
+        return r.status_code == 200
+    except requests.exceptions.RequestException:
+        return False
+
+def signup_user(username: str, password: str, email: Optional[str]) -> Dict:
+    try:
+        r = get_http().post(
+            f"{API_BASE_URL}/api/auth/signup",
+            json={"username": username, "password": password, "email": email},
+            timeout=10,
+        )
+        if r.status_code == 200:
+            return {"success": True, **(r.json() if r.headers.get("content-type","").startswith("application/json") else {})}
+        return {"success": False, "error_message": f"{r.status_code} - {r.text}"}
+    except requests.exceptions.RequestException as e:
+        return {"success": False, "error_message": f"Connection Error: {e}"}
+
+
+
+def get_chat_sessions() -> List[Dict]:
+    http = get_http()
+    try:
+        r = http.get(f"{API_BASE_URL}/api/chat/sessions", timeout=10)
+        return r.json() if r.status_code == 200 else []
+    except requests.exceptions.RequestException:
+        return []
+
+def get_chat_messages(session_id: str) -> List[Dict]:
+    http = get_http()
+    try:
+        r = http.get(f"{API_BASE_URL}/api/chat/sessions/{session_id}/messages", timeout=10)
+        return r.json() if r.status_code == 200 else []
+    except requests.exceptions.RequestException:
+        return []
+
+def delete_chat_session(session_id: str) -> bool:
+    http = get_http()
+    try:
+        r = http.delete(f"{API_BASE_URL}/api/chat/sessions/{session_id}", timeout=10)
+        return r.status_code == 200
+    except requests.exceptions.RequestException:
+        return False
+
+def rename_chat_session(session_id: str, new_name: str) -> bool:
+    http = get_http()
+    try:
+        r = http.put(
+            f"{API_BASE_URL}/api/chat/sessions/{session_id}/rename",
+            params={"new_name": new_name},
+            timeout=10,
+        )
+        return r.status_code == 200
+    except requests.exceptions.RequestException:
+        return False
+
+def send_chat_message(message: str, session_id: Optional[str], max_results: int, include_sources: bool) -> Optional[Dict]:
+    http = get_http()
+    try:
+        r = http.post(
+            f"{API_BASE_URL}/api/chat",
+            json={
+                "message": message,
+                "chat_session_id": session_id,
+                "max_results": max_results,
+                "include_sources": include_sources,
+            },
+            timeout=30,
+        )
+        if r.status_code == 200:
+            return r.json()
+        else:
+            st.error(f"API Error: {r.status_code} - {r.text}")
+            return None
+    except requests.exceptions.RequestException as e:
+        st.error(f"Connection Error: {e}")
+        return None
+
+# ========== Auth ==========
+def is_authenticated() -> bool:
+    http = get_http()
+    
+    # Try to get current user info
+    try:
+        r = http.get(f"{API_BASE_URL}/api/auth/me", timeout=5)
+        if r.status_code == 200:
+            st.session_state.user = r.json()
+            return True
+    except requests.exceptions.RequestException:
+        pass  # API unavailable, try resume
+
+    # Try resume with resume_token stored in browser
+    if cookies.ready():
+        try:
+            resume_token = cookies.get("resume_token")
+            if resume_token:
+                try:
+                    rr = http.post(f"{API_BASE_URL}/api/auth/resume", json={"resume_token": resume_token}, timeout=5)
+                    if rr.status_code == 200:
+                        r2 = http.get(f"{API_BASE_URL}/api/auth/me", timeout=5)
+                        if r2.status_code == 200:
+                            st.session_state.user = r2.json()
+                            return True
+                except requests.exceptions.RequestException:
+                    pass
+        except:
+            pass  # Cookie access failed
+    
+    st.session_state.user = None
+    return False
+
+def do_logout():
+    http = get_http()
+    try:
+        http.post(f"{API_BASE_URL}/api/auth/logout", timeout=5)
+    except: 
+        pass
+    try:
+        http.cookies.clear()  # drop any local cookie jar
+    except: 
+        pass
+    if cookies.ready():
+        try:
+            if "resume_token" in cookies:
+                del cookies["resume_token"]
+                cookies.save()
+        except:
+            pass  # Cookie clear failed, continue anyway
+    for k in ("user", "auth_cache", "current_session_id", "messages"):
+        st.session_state.pop(k, None)
+    st.query_params.update({"page": "login"})
+    st.rerun()
+
+# ========== UI helpers ==========
 def display_chat_message(message: str, is_user: bool = True):
-    """Display a chat message with proper styling."""
     css_class = "user-message" if is_user else "bot-message"
     role = "👤 You" if is_user else "🤖 TIPQIC Bot"
-    
-    st.markdown(f"""
-    <div class="chat-message {css_class}">
-        <strong>{role}:</strong><br>
-        {message}
-    </div>
-    """, unsafe_allow_html=True)
+    st.markdown(
+        f"""
+        <div class="chat-message {css_class}">
+            <strong>{role}:</strong><br>{message}
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 def display_sources(sources: List[Dict]):
-    """Display source information in a formatted way."""
     if not sources:
         return
-    
     st.markdown("### 📚 Sources")
-    
     for i, source in enumerate(sources, 1):
-        with st.expander(f"Source {i}: {source['filename']} (Page {source['page']})"):
-            st.markdown(f"**File:** {source['filename']}")
-            st.markdown(f"**Page:** {source['page']}")
-            st.markdown(f"**Preview:** {source['preview']}")
+        filename = source.get('filename', source.get('source', 'Unknown'))
+        page = source.get('page', 'N/A')
+        preview = source.get('preview', source.get('content', ''))
+        score = source.get('score', None)
+        with st.expander(f"Source {i}: {filename} (Page {page})"):
+            st.markdown(f"**File:** {filename}")
+            st.markdown(f"**Page:** {page}")
+            if isinstance(score, (int, float)):
+                st.markdown(f"**Relevance Score:** {score:.3f}")
+            st.markdown(f"**Preview:** {preview}")
 
-def main():
-    # Header
-    st.markdown('<h1 class="main-header">🤖 TIVA</h1>', unsafe_allow_html=True)
-    
-    # Sidebar
+# ========== Pages ==========
+def show_login_page():
+    st.markdown('<h1 class="main-header">🔐 Authentication</h1>', unsafe_allow_html=True)
+    tab1, tab2 = st.tabs(["🔑 Login", "📝 Sign Up"])
+
+    with tab1:
+        st.subheader("Login to Your Account")
+        with st.form("login_form"):
+            username = st.text_input("Username", key="login_username")
+            password = st.text_input("Password", type="password", key="login_password")
+            submit_button = st.form_submit_button("Login")
+            if submit_button:
+                if username and password:
+                    with st.spinner("Logging in..."):
+                        result = login_user(username, password)
+                    if result.get("success"):
+                        # After login, /api/auth/me should succeed
+                        st.session_state.pop("auth_cache", None)
+                        st.success("Login successful! Redirecting to chat...")
+                        st.query_params.update({"page": "main"})
+                        st.rerun()
+                    else:
+                        st.error(f"Login failed: {result.get('error_message','Unknown error')}")
+                else:
+                    st.error("Please enter both username and password")
+
+    with tab2:
+        st.subheader("Create New Account")
+        with st.form("signup_form"):
+            new_username = st.text_input("Username", key="signup_username")
+            new_password = st.text_input("Password", type="password", key="signup_password")
+            confirm_password = st.text_input("Confirm Password", type="password", key="confirm_password")
+            email = st.text_input("Email (Optional)", key="signup_email")
+            signup_submit = st.form_submit_button("Sign Up")
+            if signup_submit:
+                if new_username and new_password and confirm_password:
+                    if new_password == confirm_password:
+                        with st.spinner("Creating account..."):
+                            result = signup_user(new_username, new_password, email)
+                        if result.get("success"):
+                            st.success("Account created! Please log in.")
+                            st.experimental_set_query_params(page="login")
+                        else:
+                            st.error(f"Signup failed: {result.get('error_message','Unknown error')}")
+                    else:
+                        st.error("Passwords do not match")
+                else:
+                    st.error("Please fill in all required fields")
+
+def show_session_management():
     with st.sidebar:
-        st.header("⚙️ Settings")
-        
-        # API Health Check
-        api_healthy = check_api_health()
-        if api_healthy:
-            st.success("✅ API is running")
+        st.header("💬 Chat Sessions")
+        if is_authenticated():
+            sessions = get_chat_sessions()
         else:
-            st.error("❌ API is not accessible")
-            st.info("Make sure the FastAPI server is running on http://localhost:8000")
-            st.code("python api/main.py")
-        
-        # Chat Settings
-        st.subheader("Chat Settings")
-        max_results = st.slider("Max Results", min_value=1, max_value=10, value=5)
-        include_sources = st.checkbox("Include Sources", value=True)
-        
-        # Clear Chat Button
-        if st.button("🗑️ Clear Chat History"):
+            sessions = []
+            st.info("Please log in to manage chat sessions")
+            return
+
+        if st.button("🆕 New Chat"):
+            st.session_state.current_session_id = None
             st.session_state.messages = []
             st.rerun()
 
-    # Initialize chat history
+        st.markdown("---")
+
+        if sessions:
+            st.subheader("Your Sessions")
+            for session in sessions:
+                col1, col2, col3 = st.columns([2, 1, 1])
+                with col1:
+                    if st.button(f"📝 {session['name']}", key=f"session_{session['id']}"):
+                        st.session_state.current_session_id = session['id']
+                        msgs = get_chat_messages(session['id'])
+                        st.session_state.messages = [
+                            {"role": m["role"], "content": m["content"], "sources": m.get("sources", [])}
+                            for m in msgs
+                        ]
+                        st.rerun()
+                with col2:
+                    rename_key = f"renaming_{session['id']}"
+                    if rename_key not in st.session_state:
+                        st.session_state[rename_key] = False
+                    if st.button("✏️", key=f"rename_{session['id']}", help="Rename session"):
+                        st.session_state[rename_key] = True
+                        st.rerun()
+                    if st.session_state[rename_key]:
+                        new_name = st.text_input("New name:", value=session['name'], key=f"rename_input_{session['id']}")
+                        col_save, col_cancel = st.columns(2)
+                        with col_save:
+                            if st.button("💾", key=f"save_rename_{session['id']}", help="Save"):
+                                if new_name.strip():
+                                    if rename_chat_session(session['id'], new_name.strip()):
+                                        st.success("Session renamed!")
+                                        st.session_state[rename_key] = False
+                                        st.rerun()
+                                    else:
+                                        st.error("Failed to rename session")
+                                else:
+                                    st.error("Session name cannot be empty")
+                        with col_cancel:
+                            if st.button("❌", key=f"cancel_rename_{session['id']}", help="Cancel"):
+                                st.session_state[rename_key] = False
+                                st.rerun()
+                with col3:
+                    if st.button("🗑️", key=f"delete_{session['id']}", help="Delete session"):
+                        if delete_chat_session(session['id']):
+                            st.success("Session deleted!")
+                            st.rerun()
+        else:
+            st.info("No chat sessions yet. Start a new chat!")
+
+def show_user_info():
+    with st.sidebar:
+        st.header("👤 User Info")
+        if is_authenticated():
+            me = st.session_state.get("user")
+            if me:
+                st.write(f"**Username:** {me.get('username','')}")
+                if me.get('email'):
+                    st.write(f"**Email:** {me['email']}")
+                created = me.get('created_at')
+                if created:
+                    st.write(f"**Member since:** {created[:10]}")
+        else:
+            st.write("**Not logged in**")
+
+        st.markdown("---")
+
+        if is_authenticated():
+            if st.button("🚪 Logout"):
+                do_logout()
+
+def show_chat_interface():
+    api_healthy = check_api_health()
+
+    if "current_session_id" not in st.session_state:
+        st.session_state.current_session_id = None
     if "messages" not in st.session_state:
         st.session_state.messages = []
 
-    # Main chat interface
-    # Display chat history
-    for message in st.session_state.messages:
-        if message["role"] == "user":
-            display_chat_message(message["content"], is_user=True)
-        else:
-            display_chat_message(message["content"], is_user=False)
-            if "sources" in message and message["sources"]:
-                display_sources(message["sources"])
-    
-    # Chat input
-    if prompt := st.chat_input("Ask me anything about TIPQIC...", disabled=not api_healthy):
-        # Add user message to chat history
-        st.session_state.messages.append({"role": "user", "content": prompt})
-        display_chat_message(prompt, is_user=True)
-        
-        # Get bot response
-        with st.spinner("🤔 Thinking..."):
-            response = send_chat_message(prompt, max_results, include_sources)
-        
-        if response and response.get("success"):
-            # Add bot response to chat history
-            bot_message = {
-                "role": "assistant",
-                "content": response["response"],
-                "sources": response.get("sources", [])
-            }
-            st.session_state.messages.append(bot_message)
-            
-            # Display bot response
-            display_chat_message(response["response"], is_user=False)
-            if include_sources and response.get("sources"):
-                display_sources(response["sources"])
-        
-        elif response and not response.get("success"):
-            error_msg = f"Error: {response.get('error_message', 'Unknown error')}"
-            st.error(error_msg)
-        else:
-            st.error("Failed to get response from the chatbot. Please try again.")
+    st.markdown('<h1 class="main-header">🤖 TIVA</h1>', unsafe_allow_html=True)
 
-    # Footer
+    if is_authenticated():
+        if st.session_state.current_session_id:
+            sessions = get_chat_sessions()
+            current_session = next((s for s in sessions if s['id'] == st.session_state.current_session_id), None)
+            st.markdown(f"**Current Session:** {current_session['name'] if current_session else 'New Chat'}")
+        else:
+            st.markdown("**Current Session:** New Chat")
+
+    show_user_info()
+    show_session_management()
+
+    with st.sidebar:
+        st.markdown("---")
+        st.header("⚙️ Chat Settings")
+        max_results = st.slider("Max Results", min_value=1, max_value=10, value=5)
+        include_sources = st.checkbox("Include Sources", value=True)
+        if st.button("🗑️ Clear Current Chat"):
+            st.session_state.messages = []
+            st.rerun()
+
+    if is_authenticated():
+        for msg in st.session_state.messages:
+            display_chat_message(msg["content"], is_user=(msg["role"] == "user"))
+            if msg.get("sources"):
+                display_sources(msg["sources"])
+
+    if is_authenticated():
+        if prompt := st.chat_input("Ask me anything about TIPQIC...", disabled=not api_healthy):
+            st.session_state.messages.append({"role": "user", "content": prompt})
+            display_chat_message(prompt, is_user=True)
+            with st.spinner("🤔 Thinking..."):
+                resp = send_chat_message(
+                    prompt,
+                    st.session_state.current_session_id,
+                    max_results,
+                    include_sources
+                )
+            if resp and resp.get("success"):
+                bot_msg = {
+                    "role": "assistant",
+                    "content": resp["response"],
+                    "sources": resp.get("sources", [])
+                }
+                st.session_state.messages.append(bot_msg)
+                display_chat_message(resp["response"], is_user=False)
+                if include_sources and resp.get("sources"):
+                    display_sources(resp["sources"])
+                st.rerun()
+            elif resp and not resp.get("success"):
+                st.error(f"Error: {resp.get('error_message','Unknown error')}")
+            else:
+                st.error("Failed to get response from the chatbot. Please try again.")
+    else:
+        st.info("🔐 Please log in to start chatting!")
+
     st.markdown("---")
     st.markdown(
         """
         <div style='text-align: center; color: #666;'>
-            Made with ❤️ using Streamlit and FastAPI | 
+            Made with ❤️ using Streamlit and FastAPI |
             <a href="http://localhost:8000/docs" target="_blank">API Docs</a>
         </div>
         """,
         unsafe_allow_html=True
     )
+
+def main():
+    # Wait for cookies to be ready
+    if not cookies.ready():
+        st.info("🔄 Initializing...")
+        st.stop()
+
+    if not check_api_health():
+        st.error("❌ API is not accessible")
+        st.info("Make sure the FastAPI server is running on http://localhost:8000")
+        st.code("python api/main.py")
+        return
+
+    # Initialize session state
+    if "http" not in st.session_state:
+        st.session_state.http = requests.Session()
+        st.session_state.http.headers.update({
+            'User-Agent': 'TIPQIC-Chatbot/1.0'
+        })
+
+    current_page = st.query_params.get("page", "main")
+
+    if is_authenticated():
+        if current_page == "login":
+            st.query_params.update({"page": "main"})
+            st.rerun()
+        else:
+            show_chat_interface()
+    else:
+        if current_page == "main":
+            st.query_params.update({"page": "login"})
+            st.rerun()
+        else:
+            show_login_page()
 
 if __name__ == "__main__":
     main()

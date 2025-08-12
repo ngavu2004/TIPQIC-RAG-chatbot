@@ -104,7 +104,26 @@ This will:
 - Generate embeddings
 - Store everything in the Chroma vector database
 
-### Step 3: Set up backend and frontend
+### Step 3: Set up PostgreSQL Database (for user authentication)
+
+```bash
+# Start PostgreSQL database
+cd db && docker-compose up -d
+
+# Check database status
+docker-compose ps
+
+# Stop database (when needed)
+docker-compose down
+```
+
+**What this provides:**
+- User authentication and login system
+- Persistent chat sessions with history
+- Source tracking across sessions
+- Multi-user support
+
+### Step 4: Set up backend and frontend
    #### Linux
 
    Run this command: `start_services.sh` to start services

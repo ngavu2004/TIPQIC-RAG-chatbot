@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15
+    container_name: tipqic_postgres
+    environment:
+      POSTGRES_DB: tipqic_chatbot
+      POSTGRES_USER: tipqic_user
+      POSTGRES_PASSWORD: tipqic_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    restart: unless-stopped
+
+volumes:
+  postgres_data: 
