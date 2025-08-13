@@ -40,6 +40,16 @@ Complete guide for setting up AWS S3 integration for admin file uploads.
 - IAM permissions
 - Troubleshooting guide
 
+### `FILE_UPLOAD_SYSTEM.md`
+Comprehensive documentation for the flexible file upload system.
+
+**Includes:**
+- Architecture overview
+- Multiple file source support
+- API endpoints
+- Future extensibility
+- Database file storage (planned)
+
 ## Running Scripts
 
 All scripts should be run from the project root directory:

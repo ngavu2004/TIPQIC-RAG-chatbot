@@ -27,6 +27,10 @@ from db.database import (
     get_password_hash,
 )
 
+# Import file upload manager
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+from file_upload_manager import file_upload_service
+
 # ----------------------------
 # Config
 # ----------------------------
@@ -53,37 +57,7 @@ def create_resume_token(session_id: str) -> str:
     """Create a resume token for the session."""
     return f"resume_{session_id}_{uuid4().hex[:16]}"
 
-def upload_file_to_s3(file_content: bytes, filename: str) -> dict:
-    """Upload a file to S3 bucket."""
-    try:
-        s3_client = boto3.client('s3')
-        s3_key = f"{S3_FILES_PREFIX}{filename}"
-        
-        s3_client.put_object(
-            Bucket=S3_BUCKET_NAME,
-            Key=s3_key,
-            Body=file_content,
-            ContentType='application/octet-stream'
-        )
-        
-        return {
-            "success": True,
-            "s3_key": s3_key,
-            "filename": filename,
-            "message": f"File uploaded successfully to s3://{S3_BUCKET_NAME}/{s3_key}"
-        }
-    except ClientError as e:
-        return {
-            "success": False,
-            "error": str(e),
-            "message": "Failed to upload file to S3"
-        }
-    except Exception as e:
-        return {
-            "success": False,
-            "error": str(e),
-            "message": "Unexpected error during upload"
-        }
+
 
 app = FastAPI(
     title="TIPQIC RAG Chatbot API",
@@ -351,14 +325,8 @@ async def upload_file(
     file: UploadFile = File(...),
     current_user: User = Depends(get_current_admin_user)
 ):
-    if not file.filename:
-        raise HTTPException(status_code=400, detail="No file provided")
-    
-    # Read file content
-    file_content = await file.read()
-    
-    # Upload to S3
-    result = upload_file_to_s3(file_content, file.filename)
+    # Upload to S3 using the file upload service
+    result = file_upload_service.upload_from_fastapi(file)
     
     if result["success"]:
         return {
@@ -371,6 +339,65 @@ async def upload_file(
         }
     else:
         raise HTTPException(status_code=500, detail=result["message"])
+
+# --- Admin: Upload from Source (admin only) ---
+@app.post("/api/admin/upload-from-source")
+async def upload_from_source(
+    source_name: str,
+    file_identifier: str,
+    s3_filename: str = None,
+    current_user: User = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    # Register database source if needed
+    if source_name == "database" and "database" not in file_upload_service.get_available_sources():
+        from file_upload_manager import DatabaseFileSource
+        file_upload_service.register_source("database", DatabaseFileSource(db))
+    
+    # Upload from source
+    result = file_upload_service.upload_from_source(source_name, file_identifier, s3_filename)
+    
+    if result["success"]:
+        return {
+            "success": True,
+            "message": result["message"],
+            "filename": result["filename"],
+            "s3_key": result["s3_key"],
+            "uploaded_by": current_user.username,
+            "timestamp": datetime.utcnow().isoformat(),
+            "source": source_name
+        }
+    else:
+        raise HTTPException(status_code=500, detail=result["message"])
+
+# --- Admin: List Source Files (admin only) ---
+@app.get("/api/admin/list-source-files/{source_name}")
+async def list_source_files(
+    source_name: str,
+    current_user: User = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    # Register database source if needed
+    if source_name == "database" and "database" not in file_upload_service.get_available_sources():
+        from file_upload_manager import DatabaseFileSource
+        file_upload_service.register_source("database", DatabaseFileSource(db))
+    
+    files = file_upload_service.list_source_files(source_name)
+    return {
+        "source": source_name,
+        "files": files,
+        "count": len(files)
+    }
+
+# --- Admin: Get Available Sources (admin only) ---
+@app.get("/api/admin/available-sources")
+async def get_available_sources(
+    current_user: User = Depends(get_current_admin_user)
+):
+    return {
+        "sources": file_upload_service.get_available_sources(),
+        "count": len(file_upload_service.get_available_sources())
+    }
 
 # --- Chat (protected) ---
 @app.post("/api/chat", response_model=ChatResponse)

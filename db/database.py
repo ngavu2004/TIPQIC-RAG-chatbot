@@ -86,6 +86,22 @@ class ChatMessage(Base):
     # Relationships
     chat_session = relationship("ChatSession", back_populates="messages")
 
+class StoredFile(Base):
+    __tablename__ = "stored_files"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    filename = Column(String(255), nullable=False)
+    original_filename = Column(String(255), nullable=False)
+    file_size = Column(Integer, nullable=False)
+    content_type = Column(String(100))
+    file_content = Column(Text, nullable=False)  # Base64 encoded content
+    uploaded_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    uploaded_at = Column(DateTime, default=datetime.utcnow)
+    is_active = Column(Boolean, default=True)
+    
+    # Relationships
+    user = relationship("User", backref="uploaded_files")
+
 # Database dependency
 def get_db():
     db = SessionLocal()

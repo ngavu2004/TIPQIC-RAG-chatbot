@@ -391,42 +391,124 @@ def show_admin_page():
     st.subheader("📁 File Upload to S3")
     st.info("Upload files to s3://tipchatbot/files/")
     
-    uploaded_file = st.file_uploader(
-        "Choose a file to upload",
-        type=['txt', 'pdf', 'doc', 'docx', 'csv', 'json', 'xml', 'md'],
-        help="Select a file to upload to S3 bucket"
-    )
+    # Tab for different upload methods
+    upload_tab1, upload_tab2 = st.tabs(["📤 Direct Upload", "🗄️ Upload from Source"])
     
-    if uploaded_file is not None:
-        st.write(f"**Selected file:** {uploaded_file.name}")
-        st.write(f"**File size:** {uploaded_file.size} bytes")
-        st.write(f"**File type:** {uploaded_file.type}")
+    with upload_tab1:
+        st.subheader("Upload Local File")
+        uploaded_file = st.file_uploader(
+            "Choose a file to upload",
+            type=['txt', 'pdf', 'doc', 'docx', 'csv', 'json', 'xml', 'md'],
+            help="Select a file to upload to S3 bucket"
+        )
         
-        if st.button("🚀 Upload to S3"):
-            with st.spinner("Uploading file to S3..."):
-                try:
-                    # Prepare file for upload
-                    files = {"file": (uploaded_file.name, uploaded_file.getvalue(), uploaded_file.type)}
-                    
-                    # Upload to backend
-                    http = get_http()
-                    response = http.post(
-                        f"{API_BASE_URL}/api/admin/upload-file",
-                        files=files,
-                        timeout=30
-                    )
-                    
-                    if response.status_code == 200:
-                        result = response.json()
-                        st.success(f"✅ {result['message']}")
-                        st.info(f"**S3 Key:** {result['s3_key']}")
-                        st.info(f"**Uploaded by:** {result['uploaded_by']}")
-                        st.info(f"**Timestamp:** {result['timestamp']}")
-                    else:
-                        st.error(f"❌ Upload failed: {response.status_code} - {response.text}")
+        if uploaded_file is not None:
+            st.write(f"**Selected file:** {uploaded_file.name}")
+            st.write(f"**File size:** {uploaded_file.size} bytes")
+            st.write(f"**File type:** {uploaded_file.type}")
+            
+            if st.button("🚀 Upload to S3"):
+                with st.spinner("Uploading file to S3..."):
+                    try:
+                        # Prepare file for upload
+                        files = {"file": (uploaded_file.name, uploaded_file.getvalue(), uploaded_file.type)}
                         
-                except Exception as e:
-                    st.error(f"❌ Upload error: {str(e)}")
+                        # Upload to backend
+                        http = get_http()
+                        response = http.post(
+                            f"{API_BASE_URL}/api/admin/upload-file",
+                            files=files,
+                            timeout=30
+                        )
+                        
+                        if response.status_code == 200:
+                            result = response.json()
+                            st.success(f"✅ {result['message']}")
+                            st.info(f"**S3 Key:** {result['s3_key']}")
+                            st.info(f"**Uploaded by:** {result['uploaded_by']}")
+                            st.info(f"**Timestamp:** {result['timestamp']}")
+                        else:
+                            st.error(f"❌ Upload failed: {response.status_code} - {response.text}")
+                            
+                    except Exception as e:
+                        st.error(f"❌ Upload error: {str(e)}")
+    
+    with upload_tab2:
+        st.subheader("Upload from File Source")
+        
+        # Get available sources
+        try:
+            http = get_http()
+            response = http.get(f"{API_BASE_URL}/api/admin/available-sources", timeout=10)
+            if response.status_code == 200:
+                sources_data = response.json()
+                available_sources = sources_data.get("sources", [])
+            else:
+                available_sources = ["local"]  # Fallback
+        except:
+            available_sources = ["local"]  # Fallback
+        
+        source_name = st.selectbox(
+            "Select file source",
+            available_sources,
+            help="Choose the source to upload files from"
+        )
+        
+        if source_name:
+            # List files from selected source
+            try:
+                response = http.get(f"{API_BASE_URL}/api/admin/list-source-files/{source_name}", timeout=10)
+                if response.status_code == 200:
+                    files_data = response.json()
+                    source_files = files_data.get("files", [])
+                    
+                    if source_files:
+                        st.write(f"**Available files in {source_name}:**")
+                        file_options = [f"{f['filename']} ({f['size']} bytes)" for f in source_files]
+                        selected_file_info = st.selectbox("Select file to upload", file_options)
+                        
+                        if selected_file_info:
+                            # Extract filename from selection
+                            selected_filename = selected_file_info.split(" (")[0]
+                            
+                            # Optional S3 filename override
+                            s3_filename = st.text_input(
+                                "S3 filename (optional, leave empty to use original)",
+                                value=selected_filename,
+                                help="Custom filename for S3 (optional)"
+                            )
+                            
+                            if st.button("🚀 Upload from Source"):
+                                with st.spinner(f"Uploading {selected_filename} from {source_name}..."):
+                                    try:
+                                        response = http.post(
+                                            f"{API_BASE_URL}/api/admin/upload-from-source",
+                                            params={
+                                                "source_name": source_name,
+                                                "file_identifier": selected_filename,
+                                                "s3_filename": s3_filename if s3_filename != selected_filename else None
+                                            },
+                                            timeout=30
+                                        )
+                                        
+                                        if response.status_code == 200:
+                                            result = response.json()
+                                            st.success(f"✅ {result['message']}")
+                                            st.info(f"**S3 Key:** {result['s3_key']}")
+                                            st.info(f"**Source:** {result['source']}")
+                                            st.info(f"**Uploaded by:** {result['uploaded_by']}")
+                                            st.info(f"**Timestamp:** {result['timestamp']}")
+                                        else:
+                                            st.error(f"❌ Upload failed: {response.status_code} - {response.text}")
+                                            
+                                    except Exception as e:
+                                        st.error(f"❌ Upload error: {str(e)}")
+                    else:
+                        st.info(f"No files found in {source_name} source")
+                else:
+                    st.error(f"Failed to list files from {source_name}")
+            except Exception as e:
+                st.error(f"Error accessing {source_name}: {str(e)}")
     
     st.markdown("---")
     
