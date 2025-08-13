@@ -14,7 +14,7 @@ python scripts/create_test_user.py
 
 **Creates:**
 - Username: `sata2`
-- Password: `Qwertyuiop123#`
+- Password: `qwertyuiop`
 - Email: `test@example.com`
 - Admin: `True`
 

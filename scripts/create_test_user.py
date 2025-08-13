@@ -14,7 +14,7 @@ def create_test_user():
         if existing_user:
             print("✅ Test user 'sata2' already exists")
             return
-        hashed_password = get_password_hash("Qwertyuiop123#")
+        hashed_password = get_password_hash("qwertyuiop")
         test_user = User(
             username="sata2",
             password_hash=hashed_password,
@@ -26,7 +26,7 @@ def create_test_user():
         db.refresh(test_user)
         print("✅ Test user 'sata2' created successfully!")
         print(f"   Username: sata2")
-        print(f"   Password: Qwertyuiop123#")
+        print(f"   Password: qwertyuiop")
         print(f"   Email: test@example.com")
         print(f"   Admin: {test_user.is_admin}")
     except Exception as e:
