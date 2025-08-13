@@ -3,8 +3,10 @@ import sys
 from uuid import uuid4
 from datetime import datetime, timedelta
 from typing import List, Optional
+import boto3
+from botocore.exceptions import ClientError
 
-from fastapi import FastAPI, HTTPException, Depends, status, Request, Response
+from fastapi import FastAPI, HTTPException, Depends, status, Request, Response, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -33,6 +35,10 @@ SESSION_TTL_MINUTES = 60 * 24  # 1 day
 RESUME_TOKEN_TTL_MINUTES = 60 * 24 * 7  # 7 days
 FRONTEND_ORIGINS = ["http://localhost:8501", "http://127.0.0.1:8501"]  # Streamlit dev server
 
+# S3 Configuration
+S3_BUCKET_NAME = "tipchatbot"
+S3_FILES_PREFIX = "files/"
+
 def generate_session_name(message: str) -> str:
     """Generate a meaningful session name from the first user message."""
     cleaned_message = message.strip()
@@ -46,6 +52,38 @@ def generate_session_name(message: str) -> str:
 def create_resume_token(session_id: str) -> str:
     """Create a resume token for the session."""
     return f"resume_{session_id}_{uuid4().hex[:16]}"
+
+def upload_file_to_s3(file_content: bytes, filename: str) -> dict:
+    """Upload a file to S3 bucket."""
+    try:
+        s3_client = boto3.client('s3')
+        s3_key = f"{S3_FILES_PREFIX}{filename}"
+        
+        s3_client.put_object(
+            Bucket=S3_BUCKET_NAME,
+            Key=s3_key,
+            Body=file_content,
+            ContentType='application/octet-stream'
+        )
+        
+        return {
+            "success": True,
+            "s3_key": s3_key,
+            "filename": filename,
+            "message": f"File uploaded successfully to s3://{S3_BUCKET_NAME}/{s3_key}"
+        }
+    except ClientError as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "message": "Failed to upload file to S3"
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "message": "Unexpected error during upload"
+        }
 
 app = FastAPI(
     title="TIPQIC RAG Chatbot API",
@@ -138,6 +176,11 @@ def get_current_user_from_session(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     return user
+
+def get_current_admin_user(current_user: User = Depends(get_current_user_from_session)) -> User:
+    if not current_user.is_admin:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
+    return current_user
 
 def authenticate_user(db: Session, username: str, password: str) -> Optional[User]:
     user = db.query(User).filter(User.username == username).first()
@@ -285,7 +328,49 @@ async def get_current_user_info(current_user: User = Depends(get_current_user_fr
         "email": current_user.email,
         "created_at": current_user.created_at.isoformat(),
         "last_login": current_user.last_login.isoformat() if current_user.last_login else None,
+        "is_admin": current_user.is_admin,
     }
+
+# --- Admin: Dashboard (admin only) ---
+@app.get("/api/admin/dashboard")
+async def admin_dashboard(current_user: User = Depends(get_current_admin_user)):
+    return {
+        "message": "Admin Dashboard",
+        "admin_user": current_user.username,
+        "timestamp": datetime.utcnow().isoformat(),
+        "stats": {
+            "total_users": "Coming soon...",
+            "total_sessions": "Coming soon...",
+            "total_chats": "Coming soon..."
+        }
+    }
+
+# --- Admin: File Upload (admin only) ---
+@app.post("/api/admin/upload-file")
+async def upload_file(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_admin_user)
+):
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="No file provided")
+    
+    # Read file content
+    file_content = await file.read()
+    
+    # Upload to S3
+    result = upload_file_to_s3(file_content, file.filename)
+    
+    if result["success"]:
+        return {
+            "success": True,
+            "message": result["message"],
+            "filename": result["filename"],
+            "s3_key": result["s3_key"],
+            "uploaded_by": current_user.username,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+    else:
+        raise HTTPException(status_code=500, detail=result["message"])
 
 # --- Chat (protected) ---
 @app.post("/api/chat", response_model=ChatResponse)

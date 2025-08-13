@@ -354,14 +354,117 @@ def show_user_info():
                 created = me.get('created_at')
                 if created:
                     st.write(f"**Member since:** {created[:10]}")
+                if me.get('is_admin'):
+                    st.success("👑 **Admin User**")
         else:
             st.write("**Not logged in**")
 
         st.markdown("---")
 
         if is_authenticated():
-            if st.button("🚪 Logout"):
-                do_logout()
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("🚪 Logout"):
+                    do_logout()
+            with col2:
+                me = st.session_state.get("user")
+                if me and me.get('is_admin'):
+                    if st.button("⚙️ Admin"):
+                        st.query_params.update({"page": "admin"})
+                        st.rerun()
+
+def show_admin_page():
+    st.markdown('<h1 class="main-header">⚙️ Admin Dashboard</h1>', unsafe_allow_html=True)
+    
+    me = st.session_state.get("user")
+    if not me or not me.get('is_admin'):
+        st.error("❌ Admin access required")
+        st.info("You need admin privileges to access this page.")
+        if st.button("← Back to Chat"):
+            st.query_params.update({"page": "main"})
+            st.rerun()
+        return
+    
+    st.success(f"👑 Welcome, Admin {me.get('username')}!")
+    
+    # File Upload Section
+    st.subheader("📁 File Upload to S3")
+    st.info("Upload files to s3://tipchatbot/files/")
+    
+    uploaded_file = st.file_uploader(
+        "Choose a file to upload",
+        type=['txt', 'pdf', 'doc', 'docx', 'csv', 'json', 'xml', 'md'],
+        help="Select a file to upload to S3 bucket"
+    )
+    
+    if uploaded_file is not None:
+        st.write(f"**Selected file:** {uploaded_file.name}")
+        st.write(f"**File size:** {uploaded_file.size} bytes")
+        st.write(f"**File type:** {uploaded_file.type}")
+        
+        if st.button("🚀 Upload to S3"):
+            with st.spinner("Uploading file to S3..."):
+                try:
+                    # Prepare file for upload
+                    files = {"file": (uploaded_file.name, uploaded_file.getvalue(), uploaded_file.type)}
+                    
+                    # Upload to backend
+                    http = get_http()
+                    response = http.post(
+                        f"{API_BASE_URL}/api/admin/upload-file",
+                        files=files,
+                        timeout=30
+                    )
+                    
+                    if response.status_code == 200:
+                        result = response.json()
+                        st.success(f"✅ {result['message']}")
+                        st.info(f"**S3 Key:** {result['s3_key']}")
+                        st.info(f"**Uploaded by:** {result['uploaded_by']}")
+                        st.info(f"**Timestamp:** {result['timestamp']}")
+                    else:
+                        st.error(f"❌ Upload failed: {response.status_code} - {response.text}")
+                        
+                except Exception as e:
+                    st.error(f"❌ Upload error: {str(e)}")
+    
+    st.markdown("---")
+    
+    # Admin dashboard content
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.subheader("📊 System Statistics")
+        st.info("Statistics will be implemented here...")
+        
+        if st.button("🔄 Refresh Stats"):
+            st.info("Stats refresh functionality coming soon...")
+    
+    with col2:
+        st.subheader("👥 User Management")
+        st.info("User management features coming soon...")
+        
+        if st.button("👤 Manage Users"):
+            st.info("User management interface coming soon...")
+    
+    st.markdown("---")
+    
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        if st.button("📝 Chat Sessions"):
+            st.info("Chat session management coming soon...")
+    with col2:
+        if st.button("🗄️ Database"):
+            st.info("Database management coming soon...")
+    with col3:
+        if st.button("🔧 Settings"):
+            st.info("System settings coming soon...")
+    
+    st.markdown("---")
+    
+    if st.button("← Back to Chat"):
+        st.query_params.update({"page": "main"})
+        st.rerun()
 
 def show_chat_interface():
     api_healthy = check_api_health()
@@ -461,13 +564,21 @@ def main():
     current_page = st.query_params.get("page", "main")
 
     if is_authenticated():
+        me = st.session_state.get("user")
         if current_page == "login":
             st.query_params.update({"page": "main"})
             st.rerun()
+        elif current_page == "admin":
+            if me and me.get('is_admin'):
+                show_admin_page()
+            else:
+                st.error("❌ Admin access required")
+                st.query_params.update({"page": "main"})
+                st.rerun()
         else:
             show_chat_interface()
     else:
-        if current_page == "main":
+        if current_page in ["main", "admin"]:
             st.query_params.update({"page": "login"})
             st.rerun()
         else:

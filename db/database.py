@@ -40,6 +40,7 @@ class User(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     last_login = Column(DateTime)
     is_active = Column(Boolean, default=True)
+    is_admin = Column(Boolean, default=False)  # Admin flag
     
     # Relationships
     sessions = relationship("UserSession", back_populates="user", cascade="all, delete-orphan")

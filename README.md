@@ -66,6 +66,9 @@ A Retrieval-Augmented Generation (RAG) chatbot system designed for the TIPQIC pr
 
 ```
 TIPQIC-RAG-chatbot/
+├── api/                      # FastAPI backend
+├── frontend/                 # Streamlit frontend
+├── db/                       # Database models and configuration
 ├── data/
 │   ├── create_db.py          # Database creation script
 │   ├── sources/              # Place your PDF documents here
@@ -73,6 +76,12 @@ TIPQIC-RAG-chatbot/
 ├── query/
 │   ├── query_db.py           # Database search functionality
 │   └── chatbot_response.py   # Chat response generation
+├── scripts/                  # Utility scripts
+│   ├── create_test_user.py   # Create test admin user
+│   ├── create_admin_user.py  # Make existing user admin
+│   ├── AWS_SETUP.md          # AWS S3 setup guide
+│   └── README.md             # Scripts documentation
+├── test_auth_system/         # Authentication tests
 ├── chroma/                   # Vector database storage
 ├── .env                      # Environment variables
 ├── requirements.txt          # Python dependencies
@@ -97,6 +106,25 @@ Process your documents and create the searchable database:
 ```bash
 python data/create_db.py
 ```
+
+## 🔧 Utility Scripts
+
+The `scripts/` directory contains utility scripts for system administration:
+
+### User Management
+```bash
+# Create test admin user
+python scripts/create_test_user.py
+
+# Make existing user admin
+python scripts/create_admin_user.py
+```
+
+### AWS S3 Setup
+For admin file upload functionality, see `scripts/AWS_SETUP.md` for complete setup instructions.
+
+### Scripts Documentation
+See `scripts/README.md` for detailed documentation of all available scripts.
 
 This will:
 - Extract text from all PDFs in sources

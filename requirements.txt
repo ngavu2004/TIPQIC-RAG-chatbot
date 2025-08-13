@@ -26,3 +26,4 @@ python-multipart
 streamlit-cookies-manager
 selenium
 webdriver-manager
+boto3
