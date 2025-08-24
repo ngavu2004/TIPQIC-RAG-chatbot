@@ -128,6 +128,7 @@ This will:
 ## 💬 Usage Examples
 
 ### Command Line Query
+#### a. Get response solely from retrieved documents
 ```bash
 python query/query_db.py "How does machine learning work in this project?"
 ```
@@ -142,6 +143,38 @@ Question: How does machine learning work in this project?
 Based on the documents, machine learning in the TIPQIC project...
 
 📚 Based on 3 relevant sources
+```
+
+#### b. Get response from retrieved documents AND LLM background knowledge
+```bash
+python query/chatbot_response.py 'How does ML work in this project?'
+```
+
+Output:
+```
+Question: 'What is TIPQIC about?
+============================================================
+🔍 Found relevant information, generating response...
+
+💬 Response:
+The provided documents do not contain information about the use of machine learning (ML) in the AHCCCS Targeted Investments (TI 2.0) project. Therefore, I cannot answer your question using the provided context.
+
+Based on my general knowledge, machine learning could potentially be used in a project like this for:
+
+*   **Predictive modeling:** To forecast performance on incentivized measures based on various factors.
+*   **Data analysis:** To identify patterns and insights in the data related to health equity and quality improvement.
+*   **Personalized recommendations:** To suggest tailored interventions or best practices to participants based on their specific needs and performance.
+
+However, without specific information about the TI 2.0 project, I cannot confirm whether ML is actually used or how it is implemented.
+
+============================================================
+
+Sources used:
+1. TI2.0ProgramWelcomePacket.pdf (Page 10) - Relevance: 0.191
+2. TI2.0ProgramWelcomePacket.pdf (Page 4) - Relevance: 0.187
+3. TI2.0ProgramWelcomePacket.pdf (Page 10) - Relevance: 0.180
+4. TI2.0ProgramWelcomePacket.pdf (Page 9) - Relevance: 0.179
+5. TI2.0ProgramWelcomePacket.pdf (Page 9) - Relevance: 0.175
 ```
 
 ### Interactive Chat

@@ -1,7 +1,7 @@
 import os
 
 from langchain_google_genai import ChatGoogleGenerativeAI
-from .query_db import search_db
+from query_db import search_db
 
 
 def generate_chat_response(query: str, retrieved_docs) -> str:
@@ -25,36 +25,44 @@ def generate_chat_response(query: str, retrieved_docs) -> str:
 
         Guidelines:
         - Answer based primarily on the provided context
-        - If the context doesn't contain enough information, say so clearly
+        - If the context doesn't contain enough information, use your background knowledge to fill in the gaps
         - Be conversational and helpful
         - Cite sources when possible (mention page numbers or document names)
         - If asked about something not in the context, politely explain the limitation
     """
 
-    user_prompt = f"""Context from documents:
+    user_prompt = f"""Context from documents (may be empty):
     {context}
 
-    Question: {query}
+    User question:
+    {query}
 
-    Please provide a helpful response based on the context above."""
+    Instructions:
+    - First try to answer using the context above.
+    - If the context is insufficient, answer using your general knowledge.
+    - If you used background knowledge, clearly note this.
+    - Cite document sources only when they appear in the context.
+    """
 
     try:
         # Initialize the chat model
         llm = ChatGoogleGenerativeAI(
             model="gemini-2.0-flash",
             temperature=0.7,
-            convert_system_message_to_human=True,
+            system_instruction=system_prompt,
         )
 
-        # Create messages
-        # messages = [
-        #     {"role": "system", "content": system_prompt},
-        #     {"role": "user", "content": user_prompt},
-        # ]
+        # Prepend system prompt manually
+        composed_prompt = f"""[SYSTEM INSTRUCTION]
+        {system_prompt}
+
+        [USER MESSAGE]
+        {user_prompt}
+        """
 
         # Generate response
         response = llm.invoke(
-            user_prompt
+            composed_prompt
         )  # Gemini doesn't use system messages the same way
 
         return response.content
