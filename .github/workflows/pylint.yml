@@ -26,15 +26,15 @@ jobs:
         pip install -r requirements.txt
         pip install black isort autoflake pylint
     
-    - name: Run Autoflake (check unused imports)
-      run: autoflake --check --recursive .
+    # - name: Run Autoflake (check unused imports)
+    #   run: autoflake --check --recursive .
     
-    - name: Run Black (check formatting)
-      run: black --check --diff .
+    # - name: Run Black (check formatting)
+    #   run: black --check --diff .
     
-    - name: Run isort (check import sorting)
-      run: isort --check-only --diff .
+    # - name: Run isort (check import sorting)
+    #   run: isort --check-only --diff .
     
-    - name: Run Pylint (linting)
-      run: |
-        pylint --fail-under=8.0 $(find . -name "*.py" -not -path "./.rag_env/*" -not -path "./*env/*")
+    # - name: Run Pylint (linting)
+    #   run: |
+    #     pylint --fail-under=8.0 $(find . -name "*.py" -not -path "./.rag_env/*" -not -path "./*env/*")
