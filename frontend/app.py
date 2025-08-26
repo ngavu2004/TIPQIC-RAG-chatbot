@@ -119,8 +119,9 @@ def display_sources(sources: List[Dict]):
             st.markdown(f"**Page:** {source['page']}")
             st.markdown(f"**Preview:** {source['preview']}")
 
-def main():
+def main(host: str, port: int):
     # Header
+    API_BASE_URL = f"http://{host}:{port}"
     st.markdown('<h1 class="main-header">🤖 TIVA</h1>', unsafe_allow_html=True)
     
     # Sidebar
@@ -203,4 +204,10 @@ def main():
     )
 
 if __name__ == "__main__":
-    main()
+    from argparse import ArgumentParser
+    parser = ArgumentParser(description="Streamlit Chatbot")
+    parser.add_argument("--host", type=str, default="localhost", help="Host to run the Streamlit app")
+    parser.add_argument("--port", type=int, default=8000, help="Port to run the backend")
+    args = parser.parse_args()
+
+    main(args.host, args.port)
