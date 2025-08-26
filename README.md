@@ -152,7 +152,7 @@ python query/chatbot_response.py 'How does ML work in this project?'
 
 Output:
 ```
-Question: 'What is TIPQIC about?
+Question: 'How is Machine learning used in this project'
 ============================================================
 🔍 Found relevant information, generating response...
 
