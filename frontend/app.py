@@ -69,25 +69,25 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-def check_api_health() -> bool:
+def check_api_health(api_base_url: str) -> bool:
     """Check if the API is running and healthy."""
     try:
-        response = requests.get(f"{API_BASE_URL}/api/health", timeout=5)
+        response = requests.get(f"{api_base_url}/api/health", timeout=5)
         return response.status_code == 200
     except requests.exceptions.RequestException:
         return False
 
-def get_api_stats() -> Optional[Dict]:
+def get_api_stats(api_base_url: str) -> Optional[Dict]:
     """Get API statistics."""
     try:
-        response = requests.get(f"{API_BASE_URL}/api/stats", timeout=5)
+        response = requests.get(f"{api_base_url}/api/stats", timeout=5)
         if response.status_code == 200:
             return response.json()
     except requests.exceptions.RequestException:
         pass
     return None
 
-def send_chat_message(message: str, max_results: int = 5, include_sources: bool = True) -> Optional[Dict]:
+def send_chat_message(api_base_url: str, message: str, max_results: int = 5, include_sources: bool = True) -> Optional[Dict]:
     """Send a chat message to the API."""
     try:
         payload = {
@@ -96,7 +96,7 @@ def send_chat_message(message: str, max_results: int = 5, include_sources: bool 
             "include_sources": include_sources
         }
         response = requests.post(
-            f"{API_BASE_URL}/api/chat",
+            f"{api_base_url}/api/chat",
             json=payload,
             timeout=30
         )
@@ -134,9 +134,11 @@ def display_sources(sources: List[Dict]):
             st.markdown(f"**Preview:** {source['preview']}")
 
 def main(host: str, port: int):
+    # Set the API base URL for this session
+    api_base_url = f"http://{host}:{port}"
+    print(f"API Base URL: {api_base_url}")
+    
     # Header
-    API_BASE_URL = f"http://{host}:{port}"
-    print(f"API Base URL: {API_BASE_URL}")
     st.markdown('<h1 class="main-header">🤖 TIVA</h1>', unsafe_allow_html=True)
     
     # Sidebar
@@ -144,12 +146,12 @@ def main(host: str, port: int):
         st.header("⚙️ Settings")
         
         # API Health Check
-        api_healthy = check_api_health()
+        api_healthy = check_api_health(api_base_url)
         if api_healthy:
             st.success("✅ API is running")
         else:
             st.error("❌ API is not accessible")
-            st.info("Make sure the FastAPI server is running on http://localhost:8000")
+            st.info(f"Make sure the FastAPI server is running on http://{host}:{port}")
             st.code("python api/main.py")
         
         # Chat Settings
@@ -184,7 +186,7 @@ def main(host: str, port: int):
         
         # Get bot response
         with st.spinner("🤔 Thinking..."):
-            response = send_chat_message(prompt, max_results, include_sources)
+            response = send_chat_message(api_base_url, prompt, max_results, include_sources)
         
         if response and response.get("success"):
             # Add bot response to chat history
