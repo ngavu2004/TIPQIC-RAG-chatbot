@@ -1,6 +1,7 @@
 import streamlit as st
 import requests
 import json
+import os
 from datetime import datetime
 from typing import Dict, List, Optional
 import time
@@ -13,8 +14,21 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# API Configuration
-API_BASE_URL = "http://localhost:8000"
+# API Configuration - Support environment variables for dynamic IP
+def get_api_base_url():
+    """Get API base URL from environment variables or use defaults."""
+    # Try to get from environment variables first
+    api_host = os.getenv('API_HOST', 'localhost')
+    api_port = os.getenv('API_PORT', '8000')
+    
+    # If we're on EC2 and have a public IP, use it
+    if api_host == 'localhost' and os.getenv('EC2_PUBLIC_IP'):
+        api_host = os.getenv('EC2_PUBLIC_IP')
+    
+    return f"http://{api_host}:{api_port}"
+
+# Get the dynamic API base URL
+API_BASE_URL = get_api_base_url()
 
 # Custom CSS for better UI
 st.markdown("""
@@ -122,6 +136,7 @@ def display_sources(sources: List[Dict]):
 def main(host: str, port: int):
     # Header
     API_BASE_URL = f"http://{host}:{port}"
+    print(f"API Base URL: {API_BASE_URL}")
     st.markdown('<h1 class="main-header">🤖 TIVA</h1>', unsafe_allow_html=True)
     
     # Sidebar
@@ -194,10 +209,10 @@ def main(host: str, port: int):
     # Footer
     st.markdown("---")
     st.markdown(
-        """
+        f"""
         <div style='text-align: center; color: #666;'>
             Made with ❤️ using Streamlit and FastAPI | 
-            <a href="http://localhost:8000/docs" target="_blank">API Docs</a>
+            <a href="http://{host}:{port}/docs" target="_blank">API Docs</a>
         </div>
         """,
         unsafe_allow_html=True

@@ -1,7 +1,11 @@
 #!/bin/bash
 set -e
 
+# Get public IP
+PUBLIC_IP=$(curl -s ifconfig.me 2>/dev/null || echo "IP_NOT_FOUND")
+
 echo "🚀 Starting TIPQIC RAG Chatbot Services..."
+echo "🌐 Detected Public IP: $PUBLIC_IP"
 
 # Navigate to project directory
 cd /home/ec2-user/TIPQIC-RAG-chatbot
@@ -24,9 +28,13 @@ BACKEND_PID=$!
 # Wait for backend to start
 sleep 5
 
-# Start frontend
+# Start frontend with environment variables
 echo "Starting frontend..."
-nohup streamlit run frontend/app.py --server.port 8501 --server.address 0.0.0.0 --server.headless true > logs/frontend.log 2>&1 &
+export API_HOST=$PUBLIC_IP
+export API_PORT=8000
+export EC2_PUBLIC_IP=$PUBLIC_IP
+git config pull.rebase false
+nohup streamlit run frontend/app.py --server.port 8501 > logs/frontend.log 2>&1 &
 FRONTEND_PID=$!
 
 # Create logs directory if it doesn't exist
@@ -35,9 +43,6 @@ mkdir -p logs
 # Save PIDs for later management
 echo $BACKEND_PID > logs/backend.pid
 echo $FRONTEND_PID > logs/frontend.pid
-
-# Get public IP
-PUBLIC_IP=$(curl -s ifconfig.me 2>/dev/null || echo "IP_NOT_FOUND")
 
 echo "✅ Services started successfully!"
 echo ""
