@@ -28,13 +28,9 @@ BACKEND_PID=$!
 # Wait for backend to start
 sleep 5
 
-# Start frontend with environment variables
+# Start frontend with command line arguments
 echo "Starting frontend..."
-export API_HOST=$PUBLIC_IP
-export API_PORT=8000
-export EC2_PUBLIC_IP=$PUBLIC_IP
-git config pull.rebase false
-nohup streamlit run frontend/app.py --server.port 8501 > logs/frontend.log 2>&1 &
+nohup streamlit run frontend/app.py --server.port 8501 -- --host $PUBLIC_IP --port 8000 > logs/frontend.log 2>&1 &
 FRONTEND_PID=$!
 
 # Create logs directory if it doesn't exist
