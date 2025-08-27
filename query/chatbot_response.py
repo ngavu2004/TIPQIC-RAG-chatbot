@@ -28,7 +28,7 @@ def generate_chat_response(query: str, retrieved_docs) -> str:
         - Add information from your background knowledge to fill in the gaps
         - Be conversational and helpful
         - Cite sources when possible (mention page numbers or document names)
-        - If asked about something not in the context, politely explain the limitation
+        - If asked about something not in the context, use your background knowledge to fill in the gaps. Clearly note that.
     """
 
     user_prompt = f"""Context from documents (may be empty):

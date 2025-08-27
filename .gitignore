@@ -14,4 +14,4 @@ Vu_Chatbot_credentials(in).csv
 .DS_Store
 lambda_aws/
 *.log
-
+logs/
