@@ -25,7 +25,7 @@ def generate_chat_response(query: str, retrieved_docs) -> str:
 
         Guidelines:
         - Answer based primarily on the provided context
-        - If the context doesn't contain enough information, use your background knowledge to fill in the gaps
+        - Add information from your background knowledge to fill in the gaps
         - Be conversational and helpful
         - Cite sources when possible (mention page numbers or document names)
         - If asked about something not in the context, politely explain the limitation
