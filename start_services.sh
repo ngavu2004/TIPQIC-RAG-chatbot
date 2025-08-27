@@ -26,7 +26,7 @@ sleep 5
 
 # Start frontend
 echo "Starting frontend..."
-nohup streamlit run frontend/app.py --server.port 8501 > logs/frontend.log 2>&1 &
+nohup streamlit run frontend/app.py --server.port 8501 --server.address 0.0.0.0 --server.headless true > logs/frontend.log 2>&1 &
 FRONTEND_PID=$!
 
 # Create logs directory if it doesn't exist
