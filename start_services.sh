@@ -28,42 +28,6 @@ BACKEND_PID=$!
 # Wait for backend to start
 sleep 5
 
-# Start frontend with environment variables
-echo "Starting frontend..."
-export STREAMLIT_SERVER_PORT=8501
-export API_HOST=$PUBLIC_IP
-export API_PORT=8000
-
-#!/bin/bash
-set -e
-
-# Get public IP
-PUBLIC_IP=$(curl -s ifconfig.me 2>/dev/null || echo "IP_NOT_FOUND")
-
-echo "🚀 Starting TIPQIC RAG Chatbot Services..."
-echo "🌐 Detected Public IP: $PUBLIC_IP"
-
-# Navigate to project directory
-cd /home/ec2-user/TIPQIC-RAG-chatbot
-
-# Activate virtual environment
-source .venv/bin/activate
-
-# Kill any existing processes
-pkill -f "uvicorn.*api.main" || true
-pkill -f "streamlit.*app.py" || true
-
-# Wait a moment
-sleep 2
-
-# Start backend
-echo "Starting backend API..."
-nohup python api/main.py > logs/backend.log 2>&1 &
-BACKEND_PID=$!
-
-# Wait for backend to start
-sleep 5
-
 # Start frontend with command line arguments
 echo "Starting frontend..."
 nohup streamlit run frontend/app.py --server.port 8501 -- --host $PUBLIC_IP --port 8000 > logs/frontend.log 2>&1 &
