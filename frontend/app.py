@@ -124,6 +124,19 @@ def rename_chat_session(session_id: str, new_name: str) -> bool:
     except requests.exceptions.RequestException:
         return False
 
+def create_chat_session(session_name: str = "New Chat") -> Optional[Dict]:
+    """Create a new chat session."""
+    http = get_http()
+    try:
+        r = http.post(
+            f"{API_BASE_URL}/api/chat/sessions",
+            params={"session_name": session_name},
+            timeout=10,
+        )
+        return r.json() if r.status_code == 200 else None
+    except requests.exceptions.RequestException:
+        return None
+
 def send_chat_message(message: str, session_id: Optional[str], max_results: int, include_sources: bool) -> Optional[Dict]:
     http = get_http()
     try:
@@ -145,6 +158,52 @@ def send_chat_message(message: str, session_id: Optional[str], max_results: int,
     except requests.exceptions.RequestException as e:
         st.error(f"Connection Error: {e}")
         return None
+
+# ========== Task Management API ==========
+def get_user_tasks() -> List[Dict]:
+    """Fetch all tasks for the current user from the database."""
+    http = get_http()
+    try:
+        r = http.get(f"{API_BASE_URL}/api/tasks", timeout=10)
+        return r.json() if r.status_code == 200 else []
+    except requests.exceptions.RequestException:
+        return []
+
+def mark_task_complete(task_id: str) -> bool:
+    """Mark a task as completed."""
+    http = get_http()
+    try:
+        r = http.put(f"{API_BASE_URL}/api/tasks/{task_id}/complete", timeout=10)
+        return r.status_code == 200
+    except requests.exceptions.RequestException:
+        return False
+
+def mark_task_incomplete(task_id: str) -> bool:
+    """Mark a task as incomplete."""
+    http = get_http()
+    try:
+        r = http.put(f"{API_BASE_URL}/api/tasks/{task_id}/incomplete", timeout=10)
+        return r.status_code == 200
+    except requests.exceptions.RequestException:
+        return False
+
+def delete_task(task_id: str) -> bool:
+    """Delete a specific task."""
+    http = get_http()
+    try:
+        r = http.delete(f"{API_BASE_URL}/api/tasks/{task_id}", timeout=10)
+        return r.status_code == 200
+    except requests.exceptions.RequestException:
+        return False
+
+def delete_all_tasks() -> bool:
+    """Delete all tasks for the current user."""
+    http = get_http()
+    try:
+        r = http.delete(f"{API_BASE_URL}/api/tasks", timeout=10)
+        return r.status_code == 200
+    except requests.exceptions.RequestException:
+        return False
 
 # ========== Auth ==========
 def is_authenticated() -> bool:
@@ -230,6 +289,25 @@ def display_sources(sources: List[Dict]):
                 st.markdown(f"**Relevance Score:** {score:.3f}")
             st.markdown(f"**Preview:** {preview}")
 
+
+def display_tasks(tasks: List[str]):
+    """Display a list of tasks in the chat interface."""
+    if not tasks:
+        return
+    
+    st.markdown("### 📋 Actionable Tasks")
+    
+    for i, task in enumerate(tasks, 1):
+        # Create a unique key for each task checkbox
+        task_key = f"task_{i}_{hash(task) % 10000}"
+        
+        # Display task with checkbox for completion tracking
+        if st.checkbox(f"**{i}.** {task}", key=task_key):
+            st.success(f"✅ Task {i} completed!")
+        
+        # Add some spacing between tasks
+        st.markdown("")
+
 # ========== Pages ==========
 def show_login_page():
     st.markdown('<h1 class="main-header">🔐 Authentication</h1>', unsafe_allow_html=True)
@@ -290,9 +368,15 @@ def show_session_management():
             return
 
         if st.button("🆕 New Chat"):
-            st.session_state.current_session_id = None
-            st.session_state.messages = []
-            st.rerun()
+            # Create a new session explicitly
+            new_session = create_chat_session("New Chat")
+            if new_session:
+                st.session_state.current_session_id = new_session['id']
+                st.session_state.messages = []
+                st.success("New chat session created!")
+                st.rerun()
+            else:
+                st.error("Failed to create new chat session")
 
         st.markdown("---")
 
@@ -305,7 +389,13 @@ def show_session_management():
                         st.session_state.current_session_id = session['id']
                         msgs = get_chat_messages(session['id'])
                         st.session_state.messages = [
-                            {"role": m["role"], "content": m["content"], "sources": m.get("sources", [])}
+                            {
+                                "role": m["role"], 
+                                "content": m["content"], 
+                                "sources": m.get("sources", []),
+                                "response_type": m.get("response_type", "normal"),
+                                "tasks": m.get("tasks", None)
+                            }
                             for m in msgs
                         ]
                         st.rerun()
@@ -548,6 +638,152 @@ def show_admin_page():
         st.query_params.update({"page": "main"})
         st.rerun()
 
+def show_tasks_page():
+    st.markdown('<h1 class="main-header">📋 Task Management</h1>', unsafe_allow_html=True)
+    
+    me = st.session_state.get("user")
+    if not me:
+        st.error("❌ Please log in to view tasks")
+        st.query_params.update({"page": "login"})
+        st.rerun()
+        return
+    
+    st.success(f"👋 Welcome, {me.get('username')}!")
+    
+    # Fetch user tasks
+    user_tasks = get_user_tasks()
+    
+    if not user_tasks:
+        st.info("📝 No tasks assigned yet!")
+        st.markdown("""
+        **To get tasks:**
+        1. Go to the main chat interface
+        2. Ask for actionable tasks like:
+           - "How to improve HEDIS scores?"
+           - "What steps should I take to optimize performance?"
+           - "Create a task list for implementing new features"
+        """)
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("🤖 Go to Chat"):
+                st.query_params.update({"page": "main"})
+                st.rerun()
+        with col2:
+            if st.button("🔄 Refresh Tasks"):
+                st.rerun()
+        return
+    
+    # Display task statistics
+    total_tasks = len(user_tasks)
+    completed_tasks = len([task for task in user_tasks if task.get('is_completed')])
+    pending_tasks = total_tasks - completed_tasks
+    completion_rate = (completed_tasks / total_tasks * 100) if total_tasks > 0 else 0
+    
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("Total Tasks", total_tasks)
+    with col2:
+        st.metric("Completed", completed_tasks)
+    with col3:
+        st.metric("Pending", pending_tasks)
+    with col4:
+        st.metric("Completion Rate", f"{completion_rate:.1f}%")
+    
+    st.markdown("---")
+    
+    # Group tasks by completion status
+    completed_tasks_list = [task for task in user_tasks if task.get('is_completed')]
+    pending_tasks_list = [task for task in user_tasks if not task.get('is_completed')]
+    
+    # Pending Tasks Section
+    if pending_tasks_list:
+        st.subheader("🔄 Pending Tasks")
+        for i, task in enumerate(pending_tasks_list):
+            with st.container():
+                col1, col2, col3 = st.columns([6, 1, 1])
+                with col1:
+                    st.write(f"**{i+1}.** {task['content']}")
+                    if task.get('created_at'):
+                        st.caption(f"Created: {task['created_at'][:10]}")
+                with col2:
+                    if st.button("✅", key=f"complete_page_{task['id']}", help="Mark as complete"):
+                        if mark_task_complete(task['id']):
+                            st.success("Task completed!")
+                            st.rerun()
+                        else:
+                            st.error("Failed to mark task as complete")
+                with col3:
+                    if st.button("🗑️", key=f"delete_{task['id']}", help="Delete task"):
+                        if delete_task(task['id']):
+                            st.success("Task deleted!")
+                            st.rerun()
+                        else:
+                            st.error("Failed to delete task")
+                st.markdown("---")
+    
+    # Completed Tasks Section
+    if completed_tasks_list:
+        st.subheader("✅ Completed Tasks")
+        for i, task in enumerate(completed_tasks_list):
+            with st.container():
+                col1, col2, col3 = st.columns([6, 1, 1])
+                with col1:
+                    st.write(f"**{i+1}.** ~~{task['content']}~~")
+                    if task.get('completed_at'):
+                        st.caption(f"Completed: {task['completed_at'][:10]}")
+                with col2:
+                    if st.button("↩️", key=f"incomplete_page_{task['id']}", help="Mark as incomplete"):
+                        if mark_task_incomplete(task['id']):
+                            st.info("Task marked as incomplete")
+                            st.rerun()
+                        else:
+                            st.error("Failed to mark task as incomplete")
+                with col3:
+                    if st.button("🗑️", key=f"delete_completed_{task['id']}", help="Delete task"):
+                        if delete_task(task['id']):
+                            st.success("Task deleted!")
+                            st.rerun()
+                        else:
+                            st.error("Failed to delete task")
+                st.markdown("---")
+    
+    # Delete All Tasks Section
+    st.markdown("---")
+    st.subheader("🗑️ Bulk Actions")
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        if st.button("🗑️ Delete All Tasks", type="secondary"):
+            st.session_state.show_delete_all_confirm = True
+    with col2:
+        if st.session_state.get("show_delete_all_confirm", False):
+            if st.button("⚠️ Confirm Delete All", type="primary"):
+                if delete_all_tasks():
+                    st.success("All tasks deleted!")
+                    st.session_state.show_delete_all_confirm = False
+                    st.rerun()
+                else:
+                    st.error("Failed to delete all tasks")
+    with col3:
+        if st.session_state.get("show_delete_all_confirm", False):
+            if st.button("❌ Cancel"):
+                st.session_state.show_delete_all_confirm = False
+                st.rerun()
+    with col4:
+        if st.button("📊 Export Tasks"):
+            st.info("Export functionality coming soon...")
+    
+    # Navigation buttons
+    st.markdown("---")
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("🤖 Back to Chat"):
+            st.query_params.update({"page": "main"})
+            st.rerun()
+    with col2:
+        if st.button("🔄 Refresh Tasks"):
+            st.rerun()
+
 def show_chat_interface():
     api_healthy = check_api_health()
 
@@ -562,9 +798,9 @@ def show_chat_interface():
         if st.session_state.current_session_id:
             sessions = get_chat_sessions()
             current_session = next((s for s in sessions if s['id'] == st.session_state.current_session_id), None)
-            st.markdown(f"**Current Session:** {current_session['name'] if current_session else 'New Chat'}")
+            st.markdown(f"**Current Session:** {current_session['name'] if current_session else 'New Chat'} (ID: {st.session_state.current_session_id[:8]}...)")
         else:
-            st.markdown("**Current Session:** New Chat")
+            st.markdown("**Current Session:** New Chat (No session ID)")
 
     show_user_info()
     show_session_management()
@@ -577,10 +813,102 @@ def show_chat_interface():
         if st.button("🗑️ Clear Current Chat"):
             st.session_state.messages = []
             st.rerun()
+        
+        # Task Management Section
+        st.markdown("---")
+        st.header("📋 My Tasks")
+        
+        # Fetch and display user tasks
+        user_tasks = get_user_tasks()
+        
+        if user_tasks:
+            st.info(f"You have {len(user_tasks)} task(s)")
+            
+            # Group tasks by completion status
+            completed_tasks = [task for task in user_tasks if task.get('is_completed')]
+            pending_tasks = [task for task in user_tasks if not task.get('is_completed')]
+            
+            if pending_tasks:
+                st.subheader("🔄 Pending Tasks")
+                for task in pending_tasks:
+                    col1, col2, col3 = st.columns([3, 1, 1])
+                    with col1:
+                        st.write(f"• {task['content']}")
+                    with col2:
+                        if st.button("✅", key=f"complete_{task['id']}", help="Mark as complete"):
+                            if mark_task_complete(task['id']):
+                                st.success("Task completed!")
+                                st.rerun()
+                            else:
+                                st.error("Failed to mark task as complete")
+                    with col3:
+                        if st.button("🗑️", key=f"delete_pending_{task['id']}", help="Delete task"):
+                            if delete_task(task['id']):
+                                st.success("Task deleted!")
+                                st.rerun()
+                            else:
+                                st.error("Failed to delete task")
+            
+            if completed_tasks:
+                st.subheader("✅ Completed Tasks")
+                for task in completed_tasks:
+                    col1, col2, col3 = st.columns([3, 1, 1])
+                    with col1:
+                        st.write(f"• ~~{task['content']}~~")
+                    with col2:
+                        if st.button("↩️", key=f"incomplete_{task['id']}", help="Mark as incomplete"):
+                            if mark_task_incomplete(task['id']):
+                                st.info("Task marked as incomplete")
+                                st.rerun()
+                            else:
+                                st.error("Failed to mark task as incomplete")
+                    with col3:
+                        if st.button("🗑️", key=f"delete_completed_{task['id']}", help="Delete task"):
+                            if delete_task(task['id']):
+                                st.success("Task deleted!")
+                                st.rerun()
+                            else:
+                                st.error("Failed to delete task")
+        else:
+            st.info("No tasks assigned yet. Ask me for actionable tasks!")
+        
+        if st.button("🔄 Refresh Tasks"):
+            st.rerun()
+        
+        # Delete All Tasks Button
+        if user_tasks:
+            st.markdown("---")
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("🗑️ Delete All Tasks", type="secondary"):
+                    st.session_state.show_delete_confirm = True
+            with col2:
+                if st.session_state.get("show_delete_confirm", False):
+                    if st.button("⚠️ Confirm", type="primary"):
+                        if delete_all_tasks():
+                            st.success("All tasks deleted!")
+                            st.session_state.show_delete_confirm = False
+                            st.rerun()
+                        else:
+                            st.error("Failed to delete all tasks")
+                    if st.button("❌ Cancel"):
+                        st.session_state.show_delete_confirm = False
+                        st.rerun()
+        
+        st.markdown("---")
+        if st.button("📋 View All Tasks"):
+            st.query_params.update({"page": "tasks"})
+            st.rerun()
 
     if is_authenticated():
         for msg in st.session_state.messages:
             display_chat_message(msg["content"], is_user=(msg["role"] == "user"))
+            
+            # Display tasks if present
+            if msg.get("response_type") == "task_list" and msg.get("tasks"):
+                display_tasks(msg["tasks"])
+            
+            # Display sources if present
             if msg.get("sources"):
                 display_sources(msg["sources"])
 
@@ -596,13 +924,25 @@ def show_chat_interface():
                     include_sources
                 )
             if resp and resp.get("success"):
+                # Update session ID if a new session was created
+                if resp.get("chat_session_id") and not st.session_state.current_session_id:
+                    st.session_state.current_session_id = resp["chat_session_id"]
+                
                 bot_msg = {
                     "role": "assistant",
                     "content": resp["response"],
-                    "sources": resp.get("sources", [])
+                    "sources": resp.get("sources", []),
+                    "response_type": resp.get("response_type", "normal"),
+                    "tasks": resp.get("tasks")
                 }
                 st.session_state.messages.append(bot_msg)
                 display_chat_message(resp["response"], is_user=False)
+                
+                # Display tasks if present
+                if resp.get("response_type") == "task_list" and resp.get("tasks"):
+                    display_tasks(resp["tasks"])
+                
+                # Display sources if requested
                 if include_sources and resp.get("sources"):
                     display_sources(resp["sources"])
                 st.rerun()
@@ -657,10 +997,12 @@ def main():
                 st.error("❌ Admin access required")
                 st.query_params.update({"page": "main"})
                 st.rerun()
+        elif current_page == "tasks":
+            show_tasks_page()
         else:
             show_chat_interface()
     else:
-        if current_page in ["main", "admin"]:
+        if current_page in ["main", "admin", "tasks"]:
             st.query_params.update({"page": "login"})
             st.rerun()
         else:

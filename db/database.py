@@ -86,6 +86,24 @@ class ChatMessage(Base):
     # Relationships
     chat_session = relationship("ChatSession", back_populates="messages")
 
+class UserTask(Base):
+    __tablename__ = "user_tasks"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    chat_session_id = Column(UUID(as_uuid=True), ForeignKey("chat_sessions.id"), nullable=False)
+    task_content = Column(Text, nullable=False)
+    task_order = Column(Integer, nullable=False)  # Order in the original task list
+    is_completed = Column(Boolean, default=False)
+    completed_at = Column(DateTime)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    user = relationship("User")
+    chat_session = relationship("ChatSession")
+
+
 class StoredFile(Base):
     __tablename__ = "stored_files"
     

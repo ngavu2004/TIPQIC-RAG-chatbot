@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 # Add the parent directory to the path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from query.chatbot_response import generate_chat_response
+from query.chatbot_response import generate_response_with_routing
 from query.query_db import search_db
 from data.create_db import add_chunks_to_chroma
 from db.database import (
@@ -23,6 +23,7 @@ from db.database import (
     UserSession,
     ChatSession,
     ChatMessage,
+    UserTask,
     verify_password,
     get_password_hash,
 )
@@ -107,6 +108,9 @@ class ChatResponse(BaseModel):
     timestamp: str
     success: bool
     error_message: Optional[str] = None
+    response_type: str = "normal"  # "normal" or "task_list"
+    tasks: Optional[List[str]] = None
+    chat_session_id: Optional[str] = None
 
 class HealthResponse(BaseModel):
     status: str
@@ -417,6 +421,8 @@ async def chat_endpoint(
             if not chat_session:
                 raise HTTPException(status_code=404, detail="Chat session not found")
         else:
+            # Create a new session only if explicitly requested or if this is the first message
+            # For now, we'll create a new session, but we could make this more explicit
             session_name = generate_session_name(request.message)
             chat_session = ChatSession(user_id=current_user.id, session_name=session_name)
             db.add(chat_session)
@@ -439,8 +445,8 @@ async def chat_endpoint(
                 success=True,
             )
 
-        # Generate AI response
-        ai_response = generate_chat_response(request.message, results)
+        # Generate AI response with routing
+        ai_response = generate_response_with_routing(request.message, results)
 
         # Prepare sources
         sources_info: List[SourceInfo] = []
@@ -454,6 +460,31 @@ async def chat_endpoint(
                     SourceInfo(filename=source_filename, page=page, score=score, preview=preview)
                 )
 
+        # Handle different response types
+        response_type = "normal"
+        tasks_list = None
+        response_content = ""
+        
+        if hasattr(ai_response, 'tasks'):
+            # This is a TaskList object
+            response_type = "task_list"
+            tasks_list = ai_response.tasks
+            response_content = f"I've created a list of {len(tasks_list)} actionable tasks to help you with your request."
+            
+            # Store tasks in the database
+            for i, task_content in enumerate(tasks_list, 1):
+                user_task = UserTask(
+                    user_id=current_user.id,
+                    chat_session_id=chat_session.id,
+                    task_content=task_content,
+                    task_order=i,
+                    is_completed=False
+                )
+                db.add(user_task)
+        else:
+            # This is a normal string response
+            response_content = ai_response
+
         # Store user message
         user_message = ChatMessage(
             chat_session_id=chat_session.id,
@@ -462,22 +493,34 @@ async def chat_endpoint(
         )
         db.add(user_message)
 
-        # Store assistant message with sources (convert to dict for JSONB)
+        # Store assistant message with sources and tasks (convert to dict for JSONB)
         sources_dict = [s.dict() for s in sources_info]
+        
+        # Include task information in the message if tasks were generated
+        message_data = {
+            "sources": sources_dict,
+        }
+        if tasks_list:
+            message_data["response_type"] = "task_list"
+            message_data["tasks"] = tasks_list
+        
         assistant_message = ChatMessage(
             chat_session_id=chat_session.id,
             role="assistant",
-            content=ai_response,
-            sources=sources_dict,
+            content=response_content,
+            sources=message_data,
         )
         db.add(assistant_message)
         db.commit()
 
         return ChatResponse(
-            response=ai_response,
+            response=response_content,
             sources=sources_info,
             timestamp=datetime.now().isoformat(),
             success=True,
+            response_type=response_type,
+            tasks=tasks_list,
+            chat_session_id=str(chat_session.id),
         )
 
     except Exception as e:
@@ -500,6 +543,29 @@ async def add_chunks(chunks: List[DocumentChunk]):
     except Exception as e:
         print(f"Error in add_chunks endpoint: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to add chunks: {str(e)}")
+
+# --- Create new session (protected) ---
+@app.post("/api/chat/sessions")
+async def create_chat_session(
+    session_name: str = "New Chat",
+    current_user: User = Depends(get_current_user_from_session),
+    db: Session = Depends(get_db),
+):
+    """Create a new chat session."""
+    chat_session = ChatSession(
+        user_id=current_user.id, 
+        session_name=session_name.strip()[:255]
+    )
+    db.add(chat_session)
+    db.commit()
+    db.refresh(chat_session)
+    
+    return {
+        "id": str(chat_session.id),
+        "name": chat_session.session_name,
+        "created_at": chat_session.created_at.isoformat(),
+        "updated_at": chat_session.updated_at.isoformat(),
+    }
 
 # --- Sessions list (protected) ---
 @app.get("/api/chat/sessions")
@@ -550,7 +616,9 @@ async def get_chat_messages(
             "role": msg.role,
             "content": msg.content,
             "timestamp": msg.timestamp.isoformat(),
-            "sources": msg.sources,
+            "sources": msg.sources.get("sources", []) if isinstance(msg.sources, dict) else msg.sources,
+            "response_type": msg.sources.get("response_type", "normal") if isinstance(msg.sources, dict) else "normal",
+            "tasks": msg.sources.get("tasks", None) if isinstance(msg.sources, dict) else None,
         }
         for msg in messages
     ]
@@ -593,6 +661,117 @@ async def rename_chat_session(
     session.session_name = new_name.strip()[:255]
     db.commit()
     return {"message": "Chat session renamed successfully", "new_name": session.session_name}
+
+# --- User Tasks (protected) ---
+@app.get("/api/tasks")
+async def get_user_tasks(
+    current_user: User = Depends(get_current_user_from_session),
+    db: Session = Depends(get_db),
+):
+    """Get all tasks for the current user."""
+    tasks = (
+        db.query(UserTask)
+        .filter(UserTask.user_id == current_user.id)
+        .order_by(UserTask.created_at.desc())
+        .all()
+    )
+    
+    return [
+        {
+            "id": str(task.id),
+            "content": task.task_content,
+            "order": task.task_order,
+            "is_completed": task.is_completed,
+            "completed_at": task.completed_at.isoformat() if task.completed_at else None,
+            "created_at": task.created_at.isoformat(),
+            "chat_session_id": str(task.chat_session_id),
+        }
+        for task in tasks
+    ]
+
+@app.put("/api/tasks/{task_id}/complete")
+async def complete_task(
+    task_id: str,
+    current_user: User = Depends(get_current_user_from_session),
+    db: Session = Depends(get_db),
+):
+    """Mark a task as completed."""
+    task = (
+        db.query(UserTask)
+        .filter(UserTask.id == task_id, UserTask.user_id == current_user.id)
+        .first()
+    )
+    
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    
+    task.is_completed = True
+    task.completed_at = datetime.utcnow()
+    db.commit()
+    
+    return {"message": "Task marked as completed", "task_id": task_id}
+
+@app.put("/api/tasks/{task_id}/incomplete")
+async def uncomplete_task(
+    task_id: str,
+    current_user: User = Depends(get_current_user_from_session),
+    db: Session = Depends(get_db),
+):
+    """Mark a task as incomplete."""
+    task = (
+        db.query(UserTask)
+        .filter(UserTask.id == task_id, UserTask.user_id == current_user.id)
+        .first()
+    )
+    
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    
+    task.is_completed = False
+    task.completed_at = None
+    db.commit()
+    
+    return {"message": "Task marked as incomplete", "task_id": task_id}
+
+@app.delete("/api/tasks/{task_id}")
+async def delete_task(
+    task_id: str,
+    current_user: User = Depends(get_current_user_from_session),
+    db: Session = Depends(get_db),
+):
+    """Delete a specific task."""
+    task = (
+        db.query(UserTask)
+        .filter(UserTask.id == task_id, UserTask.user_id == current_user.id)
+        .first()
+    )
+    
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    
+    db.delete(task)
+    db.commit()
+    
+    return {"message": "Task deleted successfully", "task_id": task_id}
+
+@app.delete("/api/tasks")
+async def delete_all_tasks(
+    current_user: User = Depends(get_current_user_from_session),
+    db: Session = Depends(get_db),
+):
+    """Delete all tasks for the current user."""
+    tasks = (
+        db.query(UserTask)
+        .filter(UserTask.user_id == current_user.id)
+        .all()
+    )
+    
+    for task in tasks:
+        db.delete(task)
+    
+    db.commit()
+    
+    return {"message": f"All {len(tasks)} tasks deleted successfully"}
 
 @app.get("/api/stats", response_model=dict)
 async def get_stats():

@@ -1,7 +1,55 @@
 import os
+from typing import List
 
 from langchain_google_genai import ChatGoogleGenerativeAI
+from pydantic import BaseModel
 from .query_db import search_db
+
+
+class TaskList(BaseModel):
+    tasks: List[str]
+
+
+class PromptType(BaseModel):
+    type: str  # "normal" or "task"
+
+
+def classify_prompt(query: str) -> str:
+    """Classify if the prompt is asking for tasks or normal response."""
+    
+    classification_prompt = f"""Classify this user query as either "normal" (for conversational response) or "task" (for actionable tasks).
+
+    Query: {query}
+    
+    Rules:
+    - Use "task" if the query asks for improvements, steps, actions, plans, or how to do something
+    - Use "normal" for general questions, explanations, or information requests
+    - Keywords like "improve", "enhance", "steps", "how to", "action plan" suggest "task"
+    - Keywords like "what is", "explain", "describe", "tell me about" suggest "normal"
+    
+    Classify this query:"""
+    
+    try:
+        llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash")
+        structured_llm = llm.with_structured_output(PromptType)
+        
+        result = structured_llm.invoke(classification_prompt)
+        return result.type
+    except Exception as e:
+        # Default to normal if classification fails
+        return "normal"
+
+
+def generate_response_with_routing(query: str, retrieved_docs):
+    """Route the query to the appropriate function."""
+    
+    # Classify the prompt type
+    prompt_type = classify_prompt(query)
+    
+    if prompt_type == "task":
+        return generate_chat_tasks(query, retrieved_docs)
+    else:
+        return generate_chat_response(query, retrieved_docs)
 
 
 def generate_chat_response(query: str, retrieved_docs) -> str:
@@ -63,6 +111,58 @@ def generate_chat_response(query: str, retrieved_docs) -> str:
         return f"Error generating response: {e}"
 
 
+def generate_chat_tasks(query: str, retrieved_docs) -> TaskList:
+    """Generate a structured list of tasks using retrieved documents as context."""
+
+    # Combine the content from retrieved documents
+    context_parts = []
+    for doc, score in retrieved_docs:
+        # Include source information in context
+        source_info = f"Source: {doc.metadata.get('source', 'Unknown')}"
+        if "page" in doc.metadata:
+            source_info += f", Page: {doc.metadata['page']}"
+
+        context_parts.append(f"{source_info}\n{doc.page_content}")
+
+    # Join all context
+    context = "\n\n---\n\n".join(context_parts)
+
+    # Create the prompt for task generation
+    prompt = f"""Based on the provided context, create a structured list of actionable tasks to address the user's request.
+
+    Context from documents:
+    {context}
+
+    User Request: {query}
+
+    Instructions:
+    - Generate specific, actionable tasks based on the TIPQIC context
+    - Make tasks clear and implementable
+    - Focus on practical steps that can be taken
+    - Consider TIPQIC-specific processes and best practices
+    - Provide 5-10 relevant tasks
+
+    Create a list of tasks that will help address this request."""
+
+    try:
+        # Initialize the chat model with structured output
+        llm = ChatGoogleGenerativeAI(
+            model="gemini-2.0-flash",
+            temperature=0.3,  # Lower temperature for more consistent structured output
+            convert_system_message_to_human=True,
+        )
+
+        # Use structured output
+        structured_llm = llm.with_structured_output(TaskList)
+        response = structured_llm.invoke(prompt)
+
+        return response
+
+    except Exception as e:
+        # Fallback to empty task list if structured output fails
+        return TaskList(tasks=[f"Error generating tasks: {e}"])
+
+
 # Update your main function
 if __name__ == "__main__":
     import sys
@@ -86,7 +186,7 @@ if __name__ == "__main__":
             print("🔍 Found relevant information, generating response...\n")
 
             # Generate chat response
-            chat_response = generate_chat_response(query, results)
+            chat_response = generate_response_with_routing(query, results)
 
             print("💬 Response:")
             print(chat_response)
