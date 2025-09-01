@@ -297,9 +297,14 @@ def display_tasks(tasks: List[str]):
     
     st.markdown("### 📋 Actionable Tasks")
     
+    # Initialize task counter in session state if not exists
+    if 'task_display_counter' not in st.session_state:
+        st.session_state.task_display_counter = 0
+    
     for i, task in enumerate(tasks, 1):
-        # Create a unique key for each task checkbox
-        task_key = f"task_{i}_{hash(task) % 10000}"
+        # Increment counter for unique keys
+        st.session_state.task_display_counter += 1
+        task_key = f"task_{st.session_state.task_display_counter}"
         
         # Display task with checkbox for completion tracking
         if st.checkbox(f"**{i}.** {task}", key=task_key):

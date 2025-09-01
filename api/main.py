@@ -1,10 +1,14 @@
 import os
 import sys
+import logging
 from uuid import uuid4
 from datetime import datetime, timedelta
 from typing import List, Optional
 import boto3
 from botocore.exceptions import ClientError
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 from fastapi import FastAPI, HTTPException, Depends, status, Request, Response, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
@@ -31,6 +35,9 @@ from db.database import (
 # Import file upload manager
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from file_upload_manager import file_upload_service
+
+# Import Teams integration
+from teams_integration import teams_integration
 
 # ----------------------------
 # Config
@@ -65,6 +72,36 @@ app = FastAPI(
     description="API for the TIPQIC RAG Chatbot system",
     version="1.0.0",
 )
+
+@app.on_event("startup")
+async def startup_event():
+    """Initialize services on startup"""
+    # Test Teams integration connection
+    if teams_integration.is_configured():
+        logger.info("🔧 Teams integration configured successfully")
+        logger.info("📋 Environment variables loaded:")
+        logger.info(f"   - Client ID: {teams_integration.client_id[:8]}...")
+        logger.info(f"   - Tenant ID: {teams_integration.tenant_id[:8]}...")
+        logger.info(f"   - Target Plan: test1")
+        logger.info("🔐 Starting Teams authentication...")
+        
+        # Try to get access token at startup
+        try:
+            access_token = teams_integration.get_access_token()
+            if access_token:
+                logger.info("✅ Teams authentication successful at startup")
+                logger.info("🎯 Teams integration ready to create tasks")
+            else:
+                logger.warning("⚠️ Teams authentication failed at startup")
+        except Exception as e:
+            logger.error(f"❌ Error during Teams authentication: {str(e)}")
+    else:
+        logger.info("Teams integration not configured - missing environment variables")
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Cleanup on shutdown"""
+    logger.info("Shutting down TIPQIC RAG Chatbot API")
 
 # Enable CORS for cookie-based auth
 app.add_middleware(
@@ -481,6 +518,34 @@ async def chat_endpoint(
                     is_completed=False
                 )
                 db.add(user_task)
+            
+            # Create tasks in Microsoft Teams Planner (only if user is authenticated)
+            if teams_integration.is_configured():
+                logger.info(f"🎯 Attempting to create {len(tasks_list)} tasks in Teams Planner")
+                teams_tasks_created = 0
+                
+                for task_content in tasks_list:
+                    try:
+                        teams_result = teams_integration.create_task_in_test1_plan(
+                            title=task_content,
+                            description=f"Task from TIPQIC Chatbot - Session: {chat_session.session_name}"
+                        )
+                        if teams_result:
+                            teams_tasks_created += 1
+                            logger.info(f"✅ Created Teams task: {teams_result['title']}")
+                        else:
+                            # This is expected when no user authentication - log at info level
+                            logger.info(f"Teams task creation skipped for: {task_content} (authentication required)")
+                    except Exception as e:
+                        logger.error(f"❌ Error creating Teams task: {str(e)}")
+                
+                if teams_tasks_created > 0:
+                    logger.info(f"🎯 Successfully created {teams_tasks_created}/{len(tasks_list)} tasks in Teams Planner")
+                else:
+                    logger.info("ℹ️ Teams integration available but no tasks created")
+                    logger.info("💡 Teams authentication required - check startup logs")
+            else:
+                logger.info("Teams integration not configured - skipping Teams task creation")
         else:
             # This is a normal string response
             response_content = ai_response
@@ -566,6 +631,92 @@ async def create_chat_session(
         "created_at": chat_session.created_at.isoformat(),
         "updated_at": chat_session.updated_at.isoformat(),
     }
+
+# --- Teams Integration Test (protected) ---
+@app.post("/api/teams/test")
+async def test_teams_integration(
+    current_user: User = Depends(get_current_user_from_session),
+):
+    """Test Teams integration and create a sample task"""
+    try:
+        if not teams_integration.is_configured():
+            raise HTTPException(
+                status_code=400, 
+                detail="Teams integration not configured - missing environment variables"
+            )
+        
+        # Test connection
+        if not teams_integration.test_connection():
+            raise HTTPException(
+                status_code=500, 
+                detail="Teams integration connection failed - interactive login may be required"
+            )
+        
+        # Create a test task
+        test_task_title = f"Test Task from {current_user.username} - {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+        test_task_description = f"This is a test task created by {current_user.username} to verify Teams integration."
+        
+        teams_result = teams_integration.create_task_in_test1_plan(
+            title=test_task_title,
+            description=test_task_description
+        )
+        
+        if teams_result:
+            return {
+                "success": True,
+                "message": "Teams integration test successful",
+                "teams_task": teams_result,
+                "user": current_user.username
+            }
+        else:
+            raise HTTPException(
+                status_code=500, 
+                detail="Failed to create test task in Teams"
+            )
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Teams integration test error: {str(e)}")
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Teams integration test failed: {str(e)}"
+        )
+
+# --- Teams Integration Status (protected) ---
+@app.get("/api/teams/status")
+async def get_teams_integration_status(
+    current_user: User = Depends(get_current_user_from_session),
+):
+    """Get Teams integration status"""
+    try:
+        status_info = {
+            "configured": teams_integration.is_configured(),
+            "client_id": teams_integration.client_id if teams_integration.client_id else None,
+            "tenant_id": teams_integration.tenant_id if teams_integration.tenant_id else None,
+            "test1_plan_id": teams_integration.test1_plan_id,
+            "has_access_token": teams_integration.access_token is not None,
+            "token_expires_at": teams_integration.token_expires_at.isoformat() if teams_integration.token_expires_at else None
+        }
+        
+        if teams_integration.is_configured():
+            # Test connection
+            connection_status = teams_integration.test_connection()
+            status_info["connection_status"] = connection_status
+            status_info["status"] = "connected" if connection_status else "connection_failed"
+        else:
+            status_info["connection_status"] = False
+            status_info["status"] = "not_configured"
+        
+        return status_info
+        
+    except Exception as e:
+        logger.error(f"Error getting Teams integration status: {str(e)}")
+        return {
+            "configured": False,
+            "status": "error",
+            "error": str(e)
+        }
 
 # --- Sessions list (protected) ---
 @app.get("/api/chat/sessions")
@@ -772,6 +923,73 @@ async def delete_all_tasks(
     db.commit()
     
     return {"message": f"All {len(tasks)} tasks deleted successfully"}
+
+# --- Teams Integration Endpoints ---
+@app.post("/api/teams/test")
+async def test_teams_integration(
+    current_user: User = Depends(get_current_user_from_session),
+):
+    """Test Teams integration by creating a sample task"""
+    try:
+        if not teams_integration.is_configured():
+            raise HTTPException(status_code=400, detail="Teams integration not configured")
+        
+        # Create a test task
+        result = teams_integration.create_task_in_test1_plan(
+            title=f"Test Task from {current_user.username} - {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+            description="This is a test task created through the API endpoint"
+        )
+        
+        if result:
+            return {
+                "success": True,
+                "message": "Test task created successfully in Teams",
+                "task": result
+            }
+        else:
+            return {
+                "success": False,
+                "message": "Failed to create test task - check authentication",
+                "details": "User must authenticate with Microsoft Teams first"
+            }
+            
+    except Exception as e:
+        logger.error(f"Error testing Teams integration: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Teams integration test failed: {str(e)}")
+
+@app.get("/api/teams/status")
+async def get_teams_integration_status():
+    """Get the current status of Teams integration"""
+    try:
+        status = {
+            "configured": teams_integration.is_configured(),
+            "timestamp": datetime.now().isoformat(),
+        }
+        
+        if teams_integration.is_configured():
+            status.update({
+                "client_id": teams_integration.client_id[:8] + "..." if teams_integration.client_id else None,
+                "tenant_id": teams_integration.tenant_id[:8] + "..." if teams_integration.tenant_id else None,
+                "target_plan": "test1",
+                "scopes": teams_integration.scopes,
+                "has_access_token": teams_integration.access_token is not None,
+                "token_expires_at": teams_integration.token_expires_at.isoformat() if teams_integration.token_expires_at else None
+            })
+            
+            # Test connection if we have an access token
+            if teams_integration.access_token:
+                status["connection_test"] = teams_integration.test_connection()
+            else:
+                status["connection_test"] = "No access token available"
+                status["message"] = "User must authenticate through frontend first"
+        else:
+            status["message"] = "Teams integration not configured - check environment variables"
+        
+        return status
+        
+    except Exception as e:
+        logger.error(f"Error getting Teams integration status: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to get Teams integration status: {str(e)}")
 
 @app.get("/api/stats", response_model=dict)
 async def get_stats():
