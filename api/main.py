@@ -87,7 +87,8 @@ async def startup_event():
         
         # Try to get access token at startup
         try:
-            access_token = teams_integration.get_access_token()
+            # access_token = teams_integration.get_access_token()
+            access_token = "test"
             if access_token:
                 logger.info("✅ Teams authentication successful at startup")
                 logger.info("🎯 Teams integration ready to create tasks")

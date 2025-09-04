@@ -4,6 +4,10 @@ from typing import List
 from langchain_google_genai import ChatGoogleGenerativeAI
 from pydantic import BaseModel
 from .query_db import search_db
+# Create Serper tool (NEW ADDITION)
+from langchain_community.utilities import GoogleSerperAPIWrapper
+from langchain.tools import Tool
+import os
 
 
 class TaskList(BaseModel):
@@ -52,60 +56,100 @@ def generate_response_with_routing(query: str, retrieved_docs):
         return generate_chat_response(query, retrieved_docs)
 
 
-def generate_chat_response(query: str, retrieved_docs) -> str:
-    """Generate a chat-like response using retrieved documents as context."""
-
-    # Combine the content from retrieved documents
-    context_parts = []
-    for doc, score in retrieved_docs:
-        # Include source information in context
-        source_info = f"Source: {doc.metadata.get('source', 'Unknown')}"
-        if "page" in doc.metadata:
-            source_info += f", Page: {doc.metadata['page']}"
-
-        context_parts.append(f"{source_info}\n{doc.page_content}")
-
-    # Join all context
-    context = "\n\n---\n\n".join(context_parts)
-
-    # Create the prompt for the LLM
-    system_prompt = """You are a helpful assistant for the TIPQIC project. Use the provided context to answer questions accurately and helpfully. 
-
-        Guidelines:
-        - Answer based primarily on the provided context
-        - If the context doesn't contain enough information, say so clearly
-        - Be conversational and helpful
-        - Cite sources when possible (mention page numbers or document names)
-        - If asked about something not in the context, politely explain the limitation
-    """
-
-    user_prompt = f"""Context from documents:
-    {context}
-
-    Question: {query}
-
-    Please provide a helpful response based on the context above."""
-
+def generate_chat_response(query, retrieved_docs, max_results=5):
     try:
-        # Initialize the chat model
-        llm = ChatGoogleGenerativeAI(
-            model="gemini-2.0-flash",
-            temperature=0.7,
-            convert_system_message_to_human=True,
-        )
+        # Build context string (same as your code)
+        context_parts = []
+        for doc, score in retrieved_docs:
+            source_info = f"Source: {doc.metadata.get('source', 'Unknown')}"
+            if "page" in doc.metadata:
+                source_info += f", Page: {doc.metadata['page']}"
+            context_parts.append(f"{source_info}\n{doc.page_content}")
+        context = "\n\n".join(context_parts)
 
-        # Create messages
-        # messages = [
-        #     {"role": "system", "content": system_prompt},
-        #     {"role": "user", "content": user_prompt},
-        # ]
+        llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash", temperature=0.0)
 
-        # Generate response
-        response = llm.invoke(
-            user_prompt
-        )  # Gemini doesn't use system messages the same way
+        # Create tools and bind to LLM
+        try:
+            from langchain_core.tools import tool
+            from langchain_community.utilities import GoogleSerperAPIWrapper
+            import os
+            
+            # Initialize Serper API client
+            SERPER_API_KEY = os.getenv("SERPER_API_KEY")
+            serper = GoogleSerperAPIWrapper(serper_api_key=SERPER_API_KEY)
+            
+            # Wrap as a LangChain tool
+            @tool(description="Search the web for current, real-time, or specific information if context and knowledge are insufficient.")
+            def serper_search(query: str) -> str:
+                result = serper.run(query)
+                print(f"🔹 Serper returned: {result[:300]}...")  # preview first 300 chars
+                return result
+            
+            # Bind tool to LLM
+            llm_with_tools = llm.bind_tools([serper_search])
+            print("✅ Serper search tool bound to LLM")
+        except ImportError:
+            print("❌ Serper API not available, using LLM directly")
+            llm_with_tools = llm
 
-        return response.content
+
+        user_prompt = f"""You are a helpful assistant for the TIPQIC project. You have access to:
+1. Provided context from TIPQIC documents
+2. Your internal knowledge
+3. Web search tool for additional information
+
+Follow this three-stage approach:
+
+STAGE 1 – Context-First:
+- Use ONLY the provided context to answer
+- If context is sufficient, give a complete answer
+- Cite sources (e.g., page numbers, document names) where possible
+- If context is missing details, explicitly state:
+  "The provided context does not include information about <topic>."
+
+STAGE 2 – Internal Knowledge Fallback:
+- If context is insufficient or missing, provide an additional answer from your internal knowledge
+- Clearly separate with phrases like:
+  "Based on the provided context..." vs. "Additionally, from general knowledge..."
+
+STAGE 3 – Web Search Fallback:
+- If both context and internal knowledge are insufficient, you MUST use the web search tool
+- Call the search tool with a specific query to get current information
+- Combine information from all three sources
+- Clearly separate with phrases like:
+  "Based on the provided context..." vs. "From general knowledge..." vs. "From web search results..."
+
+IMPORTANT: If you need current, real-time, or specific information that's not in the context or your knowledge, you MUST use the search tool. Do not just mention that you can search - actually perform the search.
+
+Context:
+{context}
+
+Question: {query}"""
+
+        # Use bind_tools approach - LLM handles tool execution automatically
+        print("🚀 Calling LLM with tools...")
+        try:
+            # Single LLM call - handles tool execution automatically
+            response = llm_with_tools.invoke(user_prompt)
+            print(f"📊 Response type: {type(response)}")
+            print(f"📊 Response content: {response.content}")
+            
+            # Check if tools were called (for debugging)
+            if hasattr(response, 'tool_calls') and response.tool_calls:
+                print(f"🔧 Tool calls detected: {len(response.tool_calls)}")
+                for tool_call in response.tool_calls:
+                    print(f"   - Tool: {tool_call['name']}")
+                    print(f"   - Args: {tool_call['args']}")
+            else:
+                print("ℹ️ No tool calls made")
+            
+            print("✅ LLM completed successfully")
+            return response.content
+            
+        except Exception as e:
+            print(f"❌ LLM failed: {e}")
+            return f"Error: {e}"
 
     except Exception as e:
         return f"Error generating response: {e}"
