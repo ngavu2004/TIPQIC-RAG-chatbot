@@ -16,3 +16,8 @@ fastapi
 uvicorn[standard]
 requests
 pydantic
+# OCR dependencies
+
+pdf2image
+pytesseract
+Pillow

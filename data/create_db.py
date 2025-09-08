@@ -1,6 +1,8 @@
 import os
 import shutil
 import traceback
+import tempfile
+from typing import List, Optional
 
 from dotenv import load_dotenv
 from langchain.schema import Document
@@ -16,14 +18,82 @@ from langchain_community.document_loaders import (
     UnstructuredPDFLoader
 )
 
+# OCR imports
+try:
+    from pdf2image import convert_from_path
+    from PIL import Image
+    import pytesseract
+    OCR_AVAILABLE = True
+except ImportError:
+    OCR_AVAILABLE = False
+    print("Warning: OCR dependencies not available. Install pdf2image and pytesseract for OCR support.")
+
 load_dotenv()
 # Use os.path.join for cross-platform path handling
 DATA_PATH = "./data/sources"
 
 
-def load_pdf_with_fallback(pdf_file: str) -> list[Document]:
+def load_pdf_with_ocr(pdf_file: str) -> List[Document]:
+    """
+    Load PDF using OCR for image-based PDFs.
+    Returns list of documents or empty list if OCR fails.
+    """
+    if not OCR_AVAILABLE:
+        print("  - OCR not available, skipping OCR loader")
+        return []
+    
+    file_name = os.path.basename(pdf_file)
+    documents = []
+    
+    try:
+        print(f"  - Converting PDF to images for OCR processing...")
+        
+        # Convert PDF to images
+        images = convert_from_path(pdf_file, dpi=300)
+        print(f"  - Converted to {len(images)} images")
+        
+        for page_num, image in enumerate(images):
+            try:
+                # Perform OCR on each page
+                text = pytesseract.image_to_string(image, lang='eng')
+                
+                if text and text.strip():
+                    # Create document with OCR text
+                    doc = Document(
+                        page_content=text.strip(),
+                        metadata={
+                            'source': pdf_file,
+                            'page': page_num + 1,
+                            'total_pages': len(images),
+                            'method': 'OCR',
+                            'file_name': file_name
+                        }
+                    )
+                    documents.append(doc)
+                    print(f"    - OCR extracted text from page {page_num + 1}")
+                else:
+                    print(f"    - Warning: No text extracted from page {page_num + 1}")
+                    
+            except Exception as e:
+                print(f"    - Error processing page {page_num + 1} with OCR: {e}")
+                continue
+        
+        if documents:
+            print(f"  - OCR Success: {len(documents)} pages with content")
+            return documents
+        else:
+            print(f"  - OCR failed: No content extracted")
+            return []
+            
+    except Exception as e:
+        print(f"  - OCR failed: {e}")
+        return []
+
+
+def load_pdf_with_fallback(pdf_file: str) -> List[Document]:
     """
     Try multiple PDF loaders with fallback system for better compatibility.
+    Now includes OCR as the last fallback option for image-based PDFs.
     Returns list of documents or empty list if all loaders fail.
     """
     file_name = os.path.basename(pdf_file)
@@ -63,13 +133,24 @@ def load_pdf_with_fallback(pdf_file: str) -> list[Document]:
             print(f"  - {loader_name} failed: {e}")
             continue
     
-    print(f"  - All loaders failed for {file_name}")
+    # If all standard loaders failed, try OCR as last resort
+    print(f"  - All standard loaders failed, trying OCR for {file_name}")
+    ocr_docs = load_pdf_with_ocr(pdf_file)
+    if ocr_docs:
+        return ocr_docs
+    
+    print(f"  - All loaders (including OCR) failed for {file_name}")
     return []
 
 
 def load_documents():
     print("Loading PDF documents from a folder...")
     print(f"Looking in: {os.path.abspath(DATA_PATH)}")
+    
+    if OCR_AVAILABLE:
+        print("OCR support: Available")
+    else:
+        print("OCR support: Not available (install pdf2image and pytesseract)")
 
     if not os.path.exists(DATA_PATH):
         print(f"ERROR: Directory {DATA_PATH} does not exist!")
@@ -98,6 +179,7 @@ def load_documents():
 
     documents = []
     successful_files = 0
+    ocr_successful_files = 0
     
     for pdf_file in pdf_files:
         file_name = os.path.basename(pdf_file)
@@ -108,7 +190,13 @@ def load_documents():
         if file_docs:
             documents.extend(file_docs)
             successful_files += 1
-            print(f"  - Successfully loaded {len(file_docs)} pages from {file_name}")
+            
+            # Check if OCR was used
+            if any(doc.metadata.get('method') == 'OCR' for doc in file_docs):
+                ocr_successful_files += 1
+                print(f"  - Successfully loaded {len(file_docs)} pages from {file_name} (using OCR)")
+            else:
+                print(f"  - Successfully loaded {len(file_docs)} pages from {file_name}")
             
             # Debug: Show sample content from first document
             if file_docs[0].page_content:
@@ -118,6 +206,8 @@ def load_documents():
             print(f"  - Failed to load any content from {file_name}")
 
     print(f"\nSUMMARY: Successfully loaded {len(documents)} pages from {successful_files}/{len(pdf_files)} PDF files")
+    if ocr_successful_files > 0:
+        print(f"OCR was used for {ocr_successful_files} files")
     
     # Additional debugging for empty documents
     if documents:
@@ -131,7 +221,7 @@ def load_documents():
     return documents
 
 
-def split_text(documents: list[Document]):
+def split_text(documents: List[Document]):
     print("\nSplit documents into chunks.")
     
     # Filter out empty documents before splitting
@@ -178,7 +268,7 @@ embeddings = GoogleGenerativeAIEmbeddings(
 )
 
 
-def save_to_chroma(chunks: list[Document]):
+def save_to_chroma(chunks: List[Document]):
     print("\nSaving to ChromaDB...")
     print(f"Database path: {os.path.abspath(CHROMA_PATH)}")
     
@@ -258,7 +348,7 @@ def get_chroma_db():
         return None
 
 
-def add_chunks_to_chroma(chunks: list[dict]):
+def add_chunks_to_chroma(chunks: List[dict]):
     """
     Add chunks to the Chroma database without clearing it.
     """
@@ -290,3 +380,5 @@ if __name__ == "__main__":
         print("2. Verify GOOGLE_API_KEY in .env file")
         print("3. Check if all dependencies are installed")
         print("4. Try running with: python -c 'import chromadb; print(chromadb.__version__)'")
+        print("5. For OCR support, install: pip install pdf2image pytesseract")
+        print("6. On Windows, you may need to install poppler: https://github.com/oschwartz10612/poppler-windows")
