@@ -27,8 +27,12 @@ search_tool = Tool(
     func=serper_search,
     description="Use this tool to find real-time or specific information if context or internal knowledge is insufficient."
 )
+class TaskList(BaseModel):
+    tasks: List[str]
+class PromptType(BaseModel):
+    type: str  # "normal" or "task"
 
-# Initialize ReAct agent
+# Initialize ReAct agent for chat responses
 tools = [search_tool]
 agent = initialize_agent(
     tools=tools,
@@ -38,12 +42,8 @@ agent = initialize_agent(
     handle_parsing_errors=True
 )
 
-class TaskList(BaseModel):
-    tasks: List[str]
+# We'll use the same agent for both chat and task generation
 
-
-class PromptType(BaseModel):
-    type: str  # "normal" or "task"
 
 
 def classify_prompt(query: str) -> str:
@@ -118,53 +118,78 @@ Provide your answer clearly, separating information from context, internal knowl
 def generate_chat_tasks(query: str, retrieved_docs) -> TaskList:
     """Generate a structured list of tasks using retrieved documents as context."""
 
-    # Combine the content from retrieved documents
+    # Build context
     context_parts = []
     for doc, score in retrieved_docs:
-        # Include source information in context
         source_info = f"Source: {doc.metadata.get('source', 'Unknown')}"
         if "page" in doc.metadata:
             source_info += f", Page: {doc.metadata['page']}"
-
         context_parts.append(f"{source_info}\n{doc.page_content}")
+    context = "\n\n".join(context_parts)
 
-    # Join all context
-    context = "\n\n---\n\n".join(context_parts)
+    # Construct prompt with context and instructions for task generation
+    prompt = f"""
+You are a helpful assistant for the TIPQIC project. Create actionable tasks using three stages:
 
-    # Create the prompt for task generation
-    prompt = f"""Based on the provided context, create a structured list of actionable tasks to address the user's request.
+1. Use ONLY the provided context below. If info is missing, state: "The provided context does not include information about <topic>." else say "The provided context includes information about <topic>."
+2. If and only if context is insufficient, use your internal knowledge otherwise skip this step.
+3. If context and internal knowledge are insufficient, use the WebSearch tool to get real-time information.
 
-    Context from documents:
-    {context}
+Based on the information gathered, create a structured list of actionable tasks to address the user's request.
 
-    User Request: {query}
+Context:
+{context}
 
-    Instructions:
-    - Generate specific, actionable tasks based on the TIPQIC context
-    - Make tasks clear and implementable
-    - Focus on practical steps that can be taken
-    - Consider TIPQIC-specific processes and best practices
-    - Provide 5-10 relevant tasks
+User Request: {query}
 
-    Create a list of tasks that will help address this request."""
+Generate specific, actionable tasks that the user can follow. Each task should be clear and implementable.
+
+IMPORTANT: Return your final response as a JSON object in this exact format:
+{{"tasks": ["task1", "task2", "task3"]}}
+
+Make sure to include only the JSON object, no additional text.
+"""
 
     try:
-        # Initialize the chat model with structured output
-        llm = ChatGoogleGenerativeAI(
-            model="gemini-2.0-flash",
-            temperature=0.3,  # Lower temperature for more consistent structured output
-            convert_system_message_to_human=True,
-        )
-
-        # Use structured output
-        structured_llm = llm.with_structured_output(TaskList)
-        response = structured_llm.invoke(prompt)
-
-        return response
-
+        # Use the same agent for task generation
+        print("🚀 Starting task generation agent...")
+        print(f"📝 Prompt: {prompt[:200]}...")
+        agent_response = agent.run(prompt)
+        print(f"✅ Task agent completed, response: {agent_response[:200]}...")
+        
+        # Parse JSON from the response
+        import json
+        import re
+        
+        # Look for JSON in the response
+        json_match = re.search(r'\{.*\}', agent_response, re.DOTALL)
+        if json_match:
+            tasks_data = json.loads(json_match.group())
+            tasks = tasks_data.get('tasks', [])
+            print(f"✅ Parsed tasks: {tasks}")
+            return TaskList(tasks=tasks)
+        else:
+            # If no JSON found, try to extract tasks from text
+            task_patterns = [
+                r'\d+\.\s*([^\n]+)',
+                r'[-*]\s*([^\n]+)',
+                r'•\s*([^\n]+)'
+            ]
+            
+            for pattern in task_patterns:
+                matches = re.findall(pattern, agent_response)
+                if matches:
+                    tasks = [match.strip() for match in matches if match.strip()]
+                    print(f"✅ Extracted tasks from text: {tasks}")
+                    return TaskList(tasks=tasks)
+        
+        # If all else fails, return a single task
+        return TaskList(tasks=[f"Address the request: {query}"])
+        
     except Exception as e:
-        # Fallback to empty task list if structured output fails
-        return TaskList(tasks=[f"Error generating tasks: {e}"])
+        print(f"❌ Task generation failed: {e}")
+        # If all else fails, return a single task
+        return TaskList(tasks=[f"Address the request: {query}"])
 
 
 # Update your main function

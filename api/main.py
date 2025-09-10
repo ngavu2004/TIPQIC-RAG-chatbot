@@ -521,32 +521,35 @@ async def chat_endpoint(
                 db.add(user_task)
             
             # Create tasks in Microsoft Teams Planner (only if user is authenticated)
-            if teams_integration.is_configured():
-                logger.info(f"🎯 Attempting to create {len(tasks_list)} tasks in Teams Planner")
-                teams_tasks_created = 0
-                
-                for task_content in tasks_list:
-                    try:
-                        teams_result = teams_integration.create_task_in_test1_plan(
-                            title=task_content,
-                            description=f"Task from TIPQIC Chatbot - Session: {chat_session.session_name}"
-                        )
-                        if teams_result:
-                            teams_tasks_created += 1
-                            logger.info(f"✅ Created Teams task: {teams_result['title']}")
-                        else:
-                            # This is expected when no user authentication - log at info level
-                            logger.info(f"Teams task creation skipped for: {task_content} (authentication required)")
-                    except Exception as e:
-                        logger.error(f"❌ Error creating Teams task: {str(e)}")
-                
-                if teams_tasks_created > 0:
-                    logger.info(f"🎯 Successfully created {teams_tasks_created}/{len(tasks_list)} tasks in Teams Planner")
-                else:
-                    logger.info("ℹ️ Teams integration available but no tasks created")
-                    logger.info("💡 Teams authentication required - check startup logs")
-            else:
-                logger.info("Teams integration not configured - skipping Teams task creation")
+            # COMMENTED OUT FOR NOW
+            # if teams_integration.is_configured():
+            #     logger.info(f"🎯 Attempting to create {len(tasks_list)} tasks in Teams Planner")
+            #     teams_tasks_created = 0
+            #     
+            #     for task_content in tasks_list:
+            #         try:
+            #             teams_result = teams_integration.create_task_in_test1_plan(
+            #                 title=task_content,
+            #                 description=f"Task from TIPQIC Chatbot - Session: {chat_session.session_name}"
+            #             )
+            #             if teams_result:
+            #                 teams_tasks_created += 1
+            #                 logger.info(f"✅ Created Teams task: {teams_result['title']}")
+            #             else:
+            #                 # This is expected when no user authentication - log at info level
+            #                 logger.info(f"Teams task creation skipped for: {task_content} (authentication required)")
+            #         except Exception as e:
+            #             logger.error(f"❌ Error creating Teams task: {str(e)}")
+            #     
+            #     if teams_tasks_created > 0:
+            #         logger.info(f"🎯 Successfully created {teams_tasks_created}/{len(tasks_list)} tasks in Teams Planner")
+            #     else:
+            #         logger.info("ℹ️ Teams integration available but no tasks created")
+            #         logger.info("💡 Teams authentication required - check startup logs")
+            # else:
+            #     logger.info("Teams integration not configured - skipping Teams task creation")
+            
+            logger.info(f"📝 Created {len(tasks_list)} tasks in database (Teams integration commented out)")
         else:
             # This is a normal string response
             response_content = ai_response
